@@ -23,20 +23,19 @@ You need a DreamHost shared (or VPS) plan with PHP 8.1 or newer. Everything belo
 
    ```sh
    cd ~/clips.example.com
+   mkdir -p ~/clips-old && mv ./* ./.[!.]* ~/clips-old/ 2>/dev/null
    git clone https://github.com/syntaxless/clipbin.git .
-   cp config.sample.php config.php
-   nano config.php
    ```
 
-   If the folder isn't empty, `git clone` will refuse; move its default files out of the way first (`mkdir ~/old && mv ~/clips.example.com/* ~/old/`).
+   The second line moves DreamHost's placeholder files out of the way into `~/clips-old` so the folder is empty.
 
-5. **Set your password** in `config.php`. Plain text works; a hash is better:
+5. **Run the setup** and answer its questions (site address, name, and your upload password):
 
    ```sh
-   php -r 'echo password_hash("your-password", PASSWORD_DEFAULT), "\n";'
+   php lib/setup.php
    ```
 
-   Paste the output (starting with `$2y$`) as the `password` value. Also set `base_url` to `https://clips.example.com` so embeds always use the right address.
+   It writes `config.php` with your password stored as a hash.
 
 6. **Open the site,** sign in, and upload a video.
 
@@ -53,7 +52,7 @@ The workflow in `.github/workflows/deploy.yml` copies the code to DreamHost when
 | `DH_PATH` | The site folder, e.g. `/home/youruser/clips.example.com` |
 | `DH_SSH_KEY` | A private SSH key. Make one with `ssh-keygen -t ed25519 -f clipbin-deploy -N ""`, put the contents of `clipbin-deploy.pub` on its own line in `~/.ssh/authorized_keys` on DreamHost, and paste the contents of `clipbin-deploy` here |
 
-You still create `config.php` on the server once (step 4 above).
+You still run `php lib/setup.php` on the server once (step 5 above).
 
 ## Using it from your phone
 
