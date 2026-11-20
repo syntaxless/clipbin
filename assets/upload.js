@@ -146,16 +146,29 @@ document.addEventListener('drop', (e) => { if (!drop.contains(e.target)) { e.pre
 // ---- Library actions --------------------------------------------------------
 
 async function api(action, body, query = '') {
+  let payload;
+  const headers = { 'X-CSRF': C.csrf };
+  if (body instanceof Blob) {
+    // Send binary as a multipart file field: shared-hosting firewalls often
+    // reject raw binary request bodies but allow normal file uploads.
+    payload = new FormData();
+    payload.append('chunk', body, 'chunk.bin');
+  } else {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body || {});
+  }
   const res = await fetch(`${C.base}/api.php?action=${action}${query}`, {
     method: 'POST',
-    headers: { 'X-CSRF': C.csrf, 'Content-Type': body instanceof Blob ? 'application/octet-stream' : 'application/json' },
-    body: body instanceof Blob ? body : JSON.stringify(body || {}),
+    headers,
+    body: payload,
     credentials: 'same-origin',
   });
   let data = {};
   try { data = await res.json(); } catch { /* not JSON */ }
   if (!res.ok) {
-    const err = new Error(data.error || `Server error ${res.status}`);
+    const err = new Error(data.error || (res.status === 418 || res.status === 403
+      ? `Blocked by the web host's firewall (${res.status})`
+      : `Server error ${res.status}`));
     err.status = res.status;
     err.data = data;
     throw err;

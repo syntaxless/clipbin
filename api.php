@@ -91,7 +91,16 @@ switch ($action) {
         if (!$v || $v['status'] !== 'uploading') {
             fail('Unknown upload', 404);
         }
-        $data = (string) file_get_contents('php://input');
+        // Pieces arrive as a multipart file field ("chunk"). Some hosts' firewalls
+        // (DreamHost's mod_security) reject raw binary request bodies.
+        if (isset($_FILES['chunk']) && $_FILES['chunk']['error'] === UPLOAD_ERR_OK) {
+            $data = (string) file_get_contents($_FILES['chunk']['tmp_name']);
+        } elseif (isset($_FILES['chunk']) || stripos($_SERVER['CONTENT_TYPE'] ?? '', 'multipart/') === 0) {
+            // Too big for PHP's upload limits (PHP drops the file); the client retries smaller.
+            fail('Bad chunk size');
+        } else {
+            $data = (string) file_get_contents('php://input');
+        }
         $len = strlen($data);
         $limit = (int) config('chunk_mb') * 1024 * 1024;
         if ($len === 0 || $len > $limit) {
