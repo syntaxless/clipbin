@@ -8,7 +8,7 @@ It is built to run on ordinary **shared PHP hosting** such as DreamHost: no Dock
 
 - **Upload from anywhere.** Drag and drop on a computer, tap to pick from your camera roll on a phone, or paste a file. On Android you can add Clipbin to your home screen and then share videos straight to it from the gallery's share sheet.
 - **Converts in your browser.** Phone videos (like iPhone HEVC `.mov`), `.webm`, `.mkv` and 4K clips are converted to a standard H.264 MP4 (up to 1080p) on your own device before upload, using the browser's built-in video encoder. Files that are already web-friendly MP4s are uploaded untouched. A thumbnail is made at the same time.
-- **Reliable uploads.** Files go up in small pieces with automatic retries, so big videos get past hosting limits and flaky phone connections.
+- **Reliable uploads.** Files go up in small pieces with automatic retries, so big videos get past hosting limits and flaky phone connections. Interrupted uploads resume where they stopped.
 - **Short links and rich embeds.** Every video gets a 7-character link with OpenGraph and Twitter player tags (inline video in Discord, Slack, Telegram, X and most forums) plus oEmbed, and an iframe player at `/e/<id>`.
 - **Only you can upload.** Uploading needs your password; watching only needs the link. Rename and delete videos from your library.
 
@@ -58,7 +58,7 @@ You still run `php lib/setup.php` on the server once (step 5 above).
 
 - **iPhone:** open the site in Safari, tap *Share → Add to Home Screen*. Clipbin then opens like an app. Tap the upload box to pick a video from Photos. After upload the link is ready to copy or send with the *Share* button.
 - **Android:** open the site in Chrome, tap the menu → *Add to Home screen* (or *Install app*). Clipbin then shows up in the share sheet: share a video from Photos/Gallery to Clipbin and it uploads straight away.
-- Keep the page open while a video converts and uploads. The screen is kept awake automatically where the browser allows it.
+- Keep the page open while a video converts and uploads. The screen is kept awake automatically where the browser allows it. If you lock the phone or switch apps anyway, the upload pauses and continues from the last piece when you come back (a conversion starts over by itself). Even if the phone reloads the page, the upload picks up again the next time you open Clipbin.
 
 ## Browser support for conversion
 
@@ -93,7 +93,7 @@ php -S localhost:8080 router.php
 | Path | What |
 | --- | --- |
 | `index.php` | Sign-in, upload area and your library |
-| `api.php` | Upload (init, chunk, finish), rename and delete; needs sign-in |
+| `api.php` | Upload (init, chunk, status, finish), rename and delete; needs sign-in |
 | `watch.php` | Public player page with OpenGraph / Twitter / oEmbed tags |
 | `embed.php` | Bare player for iframes (`/e/<id>`) |
 | `oembed.php` | oEmbed JSON endpoint (`/oembed?url=…`) |
