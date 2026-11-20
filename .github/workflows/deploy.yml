@@ -1,0 +1,57 @@
+name: Deploy to DreamHost
+
+# Copies the site to your DreamHost account over SSH on every push to main.
+# Set these in GitHub: Settings > Secrets and variables > Actions
+#   DH_HOST     your server, e.g. iad1-shared-b7-01.dreamhost.com (or your domain)
+#   DH_USER     your DreamHost SSH user
+#   DH_PATH     the domain folder, e.g. /home/youruser/clips.example.com
+#   DH_SSH_KEY  a private key whose public half is in ~/.ssh/authorized_keys on DreamHost
+# Your config.php, database (data/) and videos (media/) on the server are never touched.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secrets
+        id: check
+        env:
+          DH_HOST: ${{ secrets.DH_HOST }}
+        run: |
+          if [ -z "$DH_HOST" ]; then
+            echo "DreamHost secrets are not set yet, skipping deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.skip != 'true'
+
+      - name: Set up SSH
+        if: steps.check.outputs.skip != 'true'
+        env:
+          DH_SSH_KEY: ${{ secrets.DH_SSH_KEY }}
+          DH_HOST: ${{ secrets.DH_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DH_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$DH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload files
+        if: steps.check.outputs.skip != 'true'
+        env:
+          DH_HOST: ${{ secrets.DH_HOST }}
+          DH_USER: ${{ secrets.DH_USER }}
+          DH_PATH: ${{ secrets.DH_PATH }}
+        run: |
+          rsync -rlptz --delete \
+            -e "ssh -i ~/.ssh/id_deploy" \
+            --exclude='.git/' --exclude='.github/' \
+            --exclude='/config.php' \
+            --include='/data/.htaccess' --exclude='/data/*' \
+            --include='/media/.htaccess' --exclude='/media/*' \
+            ./ "$DH_USER@$DH_HOST:$DH_PATH/"

@@ -1,0 +1,26 @@
+# Clipbin - Apache rules (DreamHost shared hosting supports all of this)
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Never serve private files
+  RewriteRule ^(config\.php|config\.sample\.php|router\.php|lib/|data/|\.git|\.github) - [F,L]
+
+  # Short links
+  RewriteRule ^e/([A-Za-z0-9]{6,12})/?$ embed.php?id=$1 [L,QSA]
+  RewriteRule ^oembed/?$ oembed.php [L,QSA]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^([A-Za-z0-9]{6,12})/?$ watch.php?id=$1 [L,QSA]
+</IfModule>
+
+<FilesMatch "\.(sqlite|md|sh|json|lock)$">
+  Require all denied
+</FilesMatch>
+
+AddType video/mp4 .mp4
+AddType text/javascript .mjs
+AddType image/svg+xml .svg
+AddType application/manifest+json .webmanifest
