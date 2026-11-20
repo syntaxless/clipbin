@@ -46,18 +46,45 @@ function part_path(string $id): string
     return APP_ROOT . '/data/tmp/' . $id . '.part';
 }
 
+// Drop unfinished uploads nobody has touched for two days. "Touched" is the
+// partial file's last write, so a slow upload that is resumed later survives.
 function cleanup_stale(): void
 {
-    $cutoff = time() - 86400;
+    $cutoff = time() - 2 * 86400;
     $st = db()->prepare('SELECT id FROM videos WHERE status = "uploading" AND created_at < ?');
     $st->execute([$cutoff]);
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) {
-        @unlink(part_path($id));
+        $part = part_path($id);
+        if (is_file($part) && filemtime($part) >= $cutoff) {
+            continue;
+        }
+        @unlink($part);
         db()->prepare('DELETE FROM videos WHERE id = ?')->execute([$id]);
     }
 }
 
 switch ($action) {
+    // Where an upload stands, so the browser can pick up after an interruption
+    // (phone locked, app switched, page reloaded).
+    case 'status': {
+        $b = json_body();
+        $v = find_video((string) ($b['id'] ?? ''));
+        if (!$v) {
+            fail('Unknown upload', 404);
+        }
+        $res = ['status' => $v['status'], 'received' => (int) $v['received'], 'size' => (int) $v['size']];
+        if ($v['status'] === 'uploading') {
+            // Trust the bytes actually on disk over the counter.
+            clearstatcache();
+            $part = part_path($v['id']);
+            $res['received'] = is_file($part) ? min((int) $v['received'], (int) filesize($part)) : 0;
+            $res['chunkSize'] = (int) config('chunk_mb') * 1024 * 1024;
+        } else {
+            $res['url'] = page_url($v);
+        }
+        out($res);
+    }
+
     case 'init': {
         $b = json_body();
         $size = (int) ($b['size'] ?? 0);
@@ -127,6 +154,10 @@ switch ($action) {
     case 'finish': {
         $id = (string) ($_GET['id'] ?? '');
         $v = find_video($id);
+        // Already finished (the reply got lost when the phone locked): same answer again.
+        if ($v && $v['status'] === 'ready') {
+            out(['id' => $id, 'url' => page_url($v)]);
+        }
         if (!$v || $v['status'] !== 'uploading') {
             fail('Unknown upload', 404);
         }
