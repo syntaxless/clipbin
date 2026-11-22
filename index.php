@@ -28,10 +28,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = ($pw === '' || $pw === 'change-me')
             ? 'Set a password in config.php first.'
             : 'Wrong password.';
-    } elseif ($action === 'new_key' && is_logged_in()) {
-        upload_key(true);
-        header('Location: ' . base_url() . '/?newkey=1#iphone');
-        exit;
     } elseif ($action === 'logout') {
         $_SESSION = [];
         session_destroy();
@@ -83,28 +79,11 @@ page_head(e($site) . ' · Upload');
     <div id="jobs"></div>
 </section>
 
-<details class="card iphone" id="iphone"<?= isset($_GET['newkey']) ? ' open' : '' ?>>
-    <summary>iPhone shortcut address</summary>
-    <?php if (isset($_GET['newkey'])): ?>
-        <p class="small ok-text">New key made. The old shortcut address stops working: paste the new one into your shortcut.</p>
-    <?php endif; ?>
-    <label class="small">Keep it private: it lets anyone upload. Setup steps are in the README.
-        <span class="copyrow">
-            <input type="text" readonly value="<?= e(share_url()) ?>" onfocus="this.select()">
-            <button class="btn small" type="button" data-copy="<?= e(share_url()) ?>">Copy</button>
-        </span>
-    </label>
-    <form method="post">
-        <input type="hidden" name="action" value="new_key">
-        <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
-        <button class="btn ghost small" type="submit">Make a new key</button>
-    </form>
-</details>
-
 <section class="library">
     <div class="library-head">
         <h2>Your videos <span class="muted" id="count"><?= count($videos) ?></span></h2>
-        <form method="post">
+        <form method="post" class="head-actions">
+            <a class="btn ghost small" href="<?= e(base_url()) ?>/settings.php">Settings</a>
             <input type="hidden" name="action" value="logout">
             <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
             <button class="btn ghost small" type="submit">Sign out</button>
