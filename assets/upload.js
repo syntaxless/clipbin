@@ -32,6 +32,7 @@ function enqueue(files) {
 async function run() {
   if (busy) return;
   busy = true;
+  window.pasteyUploading = true; // pull to refresh waits while this is set
   keepAwake.start();
   hint.hidden = false;
   window.addEventListener('beforeunload', warnLeave);
@@ -45,6 +46,7 @@ async function run() {
     }
   }
   busy = false;
+  window.pasteyUploading = false;
   hint.hidden = true;
   window.removeEventListener('beforeunload', warnLeave);
   keepAwake.stop();
