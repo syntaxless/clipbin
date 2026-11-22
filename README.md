@@ -57,7 +57,7 @@ You still run `php lib/setup.php` on the server once (step 5 above).
 ## Using it from your phone
 
 - **iPhone:** open the site in Safari, tap *Share → Add to Home Screen*. Pastey then opens like an app. Tap the upload box to pick a video from Photos. After upload the link is ready to copy or send with the *Share* button.
-- **iPhone share menu:** Safari can't add itself to the share menu, so a Shortcut does it. Sign in to Pastey, open *iPhone shortcut address* under the upload box and tap **Copy**. Then, on the iPhone:
+- **iPhone share menu:** Safari can't add itself to the share menu, so a Shortcut does it. Sign in to Pastey, tap **Settings** (next to *Sign out*) and copy the *iPhone shortcut address*. Then, on the iPhone:
   1. In the **Shortcuts** app tap **+** and name it *Pastey*.
   2. Open its details (ⓘ), turn on **Show in Share Sheet**, and set it to receive **Media** only.
   3. Add **Encode Media** from the action search. Its input must show a blue **Shortcut Input** chip (tap the grey *Media* and pick Shortcut Input if not). Under the **>** set Size to **1920×1080** (not HEVC). This makes an H.264 MP4 that plays everywhere.
@@ -66,7 +66,7 @@ You still run `php lib/setup.php` on the server once (step 5 above).
 
   Test it from Photos (open a video → Share → *Pastey*), not from inside the Shortcuts app, which has no video to send. When it works, the link is on your clipboard as the notification appears. When it doesn't, the notification starts with "Pastey:" and says what the server received.
 
-  The address contains a secret key; *Make a new key* in the same panel turns the old one off (paste the new address into the shortcut). The video goes up in one request, so it is limited by `upload_max_filesize` in `.user.ini` (1 GB); choose 1280×720 in step 3 for long clips. The thumbnail is made the next time you open your library.
+  The address contains a secret key; *Make a new key* on the Settings page turns the old one off (paste the new address into the shortcut). The video goes up in one request, so it is limited by `upload_max_filesize` in `.user.ini` (1 GB); choose 1280×720 in step 3 for long clips. The thumbnail is made the next time you open your library.
 - **Android:** open the site in Chrome, tap the menu → *Add to Home screen* (or *Install app*). Pastey then shows up in the share sheet: share a video from Photos/Gallery to Pastey and it uploads straight away.
 - Keep the page open while a video converts and uploads. The screen is kept awake automatically where the browser allows it. If you lock the phone or switch apps anyway, the upload pauses and continues from the last piece when you come back (a conversion starts over by itself). Even if the phone reloads the page, the upload picks up again the next time you open Pastey.
 
@@ -105,6 +105,7 @@ php -S localhost:8080 router.php
 | `index.php` | Sign-in, upload area and your library |
 | `api.php` | Upload (init, chunk, status, finish), thumbnails, rename and delete; needs sign-in |
 | `share.php` | One-request upload with the secret key, used by the iPhone shortcut |
+| `settings.php` | Shows the iPhone shortcut address and makes a new key; needs sign-in |
 | `watch.php` | Public player page with OpenGraph / Twitter / oEmbed tags |
 | `embed.php` | Bare player for iframes (`/e/<id>`) |
 | `oembed.php` | oEmbed JSON endpoint (`/oembed?url=…`) |
