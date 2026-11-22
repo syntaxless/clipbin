@@ -31,7 +31,7 @@ function ask_secret(string $q): string
     return $a;
 }
 
-echo "\nClipbin setup\n=============\n\n";
+echo "\nPastey setup\n============\n\n";
 
 if (is_file($configFile)) {
     $again = strtolower(ask('config.php already exists. Replace it? (y/n)', 'n'));
@@ -47,7 +47,7 @@ $url = rtrim(ask('Site address', $guess), '/');
 if ($url !== '' && !preg_match('#^https?://#', $url)) {
     $url = 'https://' . $url;
 }
-$name = ask('Site name', 'Clipbin');
+$name = ask('Site name', 'Pastey');
 
 do {
     $pw = ask_secret('Choose an upload password (typing is hidden)');

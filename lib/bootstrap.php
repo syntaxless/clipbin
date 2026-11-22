@@ -10,11 +10,11 @@ function config(string $key)
         $file = APP_ROOT . '/config.php';
         if (!is_file($file)) {
             http_response_code(500);
-            echo 'Clipbin is not configured yet: copy config.sample.php to config.php and edit it.';
+            echo 'Pastey is not configured yet: copy config.sample.php to config.php and edit it.';
             exit;
         }
         $defaults = [
-            'site_name' => 'Clipbin',
+            'site_name' => 'Pastey',
             'base_url' => '',
             'password' => '',
             'max_upload_mb' => 2048,
