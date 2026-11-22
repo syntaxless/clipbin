@@ -65,7 +65,136 @@ function db(): PDO
         views INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL
     )');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
     return $pdo;
+}
+
+function setting(string $key, ?string $value = null): ?string
+{
+    if ($value !== null) {
+        db()->prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')->execute([$key, $value]);
+        return $value;
+    }
+    $st = db()->prepare('SELECT value FROM settings WHERE key = ?');
+    $st->execute([$key]);
+    $v = $st->fetchColumn();
+    return $v === false ? null : (string) $v;
+}
+
+// Secret key for uploading without signing in (the iPhone shortcut).
+// Made on first use; "Make a new key" on the upload page replaces it.
+function upload_key(bool $renew = false): string
+{
+    $k = $renew ? null : setting('upload_key');
+    return $k ?: setting('upload_key', bin2hex(random_bytes(20)));
+}
+
+function share_url(): string
+{
+    return base_url() . '/share.php?key=' . upload_key();
+}
+
+// Size and length of an MP4/MOV file, read from its moov box, so videos that
+// arrive without the browser (the iPhone shortcut) still get proper embeds.
+// Returns [width, height, duration] with zeros for anything not found.
+function mp4_info(string $path): array
+{
+    $info = [0, 0, 0.0];
+    $fh = @fopen($path, 'rb');
+    if (!$fh) {
+        return $info;
+    }
+    $fileSize = (int) filesize($path);
+    $pos = 0;
+    $moov = null;
+    while ($pos + 8 <= $fileSize) {
+        fseek($fh, $pos);
+        $h = fread($fh, 16);
+        if (strlen($h) < 8) {
+            break;
+        }
+        $size = unpack('N', $h)[1];
+        $type = substr($h, 4, 4);
+        $hdr = 8;
+        if ($size === 1 && strlen($h) >= 16) {
+            $size = unpack('J', substr($h, 8, 8))[1];
+            $hdr = 16;
+        } elseif ($size === 0) {
+            $size = $fileSize - $pos;
+        }
+        if ($size < $hdr) {
+            break;
+        }
+        if ($type === 'moov') {
+            if ($size > 64 * 1024 * 1024) {
+                break;
+            }
+            fseek($fh, $pos + $hdr);
+            $moov = fread($fh, $size - $hdr);
+            break;
+        }
+        $pos += $size;
+    }
+    fclose($fh);
+    if (!$moov) {
+        return $info;
+    }
+    $boxes = function (string $buf) {
+        $out = [];
+        $p = 0;
+        $n = strlen($buf);
+        while ($p + 8 <= $n) {
+            $size = unpack('N', substr($buf, $p, 4))[1];
+            $type = substr($buf, $p + 4, 4);
+            $hdr = 8;
+            if ($size === 1 && $p + 16 <= $n) {
+                $size = unpack('J', substr($buf, $p + 8, 8))[1];
+                $hdr = 16;
+            } elseif ($size === 0) {
+                $size = $n - $p;
+            }
+            if ($size < $hdr || $p + $size > $n) {
+                break;
+            }
+            $out[] = [$type, substr($buf, $p + $hdr, $size - $hdr)];
+            $p += $size;
+        }
+        return $out;
+    };
+    foreach ($boxes($moov) as [$type, $body]) {
+        if ($type === 'mvhd' && strlen($body) >= 32) {
+            $v1 = ord($body[0]) === 1;
+            $scale = unpack('N', substr($body, $v1 ? 20 : 12, 4))[1];
+            $dur = $v1 ? unpack('J', substr($body, 24, 8))[1] : unpack('N', substr($body, 16, 4))[1];
+            if ($scale > 0) {
+                $info[2] = round($dur / $scale, 3);
+            }
+        } elseif ($type === 'trak' && !$info[0]) {
+            $tkhd = null;
+            $isVideo = false;
+            foreach ($boxes($body) as [$t2, $b2]) {
+                if ($t2 === 'tkhd') {
+                    $tkhd = $b2;
+                } elseif ($t2 === 'mdia') {
+                    foreach ($boxes($b2) as [$t3, $b3]) {
+                        if ($t3 === 'hdlr' && substr($b3, 8, 4) === 'vide') {
+                            $isVideo = true;
+                        }
+                    }
+                }
+            }
+            if ($isVideo && $tkhd && strlen($tkhd) >= 84) {
+                $n = strlen($tkhd);
+                $w = unpack('N', substr($tkhd, $n - 8, 4))[1] >> 16;
+                $hgt = unpack('N', substr($tkhd, $n - 4, 4))[1] >> 16;
+                // Rotation matrix: a non-zero "b" entry means turned 90 or 270 degrees.
+                $b = unpack('N', substr($tkhd, $n - 40, 4))[1];
+                $info[0] = $b !== 0 ? $hgt : $w;
+                $info[1] = $b !== 0 ? $w : $hgt;
+            }
+        }
+    }
+    return $info;
 }
 
 function media_dir(): string

@@ -6,7 +6,7 @@ It is built to run on ordinary **shared PHP hosting** such as DreamHost: no Dock
 
 ## What it does
 
-- **Upload from anywhere.** Drag and drop on a computer, tap to pick from your camera roll on a phone, or paste a file. On Android you can add Clipbin to your home screen and then share videos straight to it from the gallery's share sheet.
+- **Upload from anywhere.** Drag and drop on a computer, tap to pick from your camera roll on a phone, or paste a file. Share videos straight to Clipbin from your phone's share menu: on Android through the installed app, on iPhone through a small Shortcut.
 - **Converts in your browser.** Phone videos (like iPhone HEVC `.mov`), `.webm`, `.mkv` and 4K clips are converted to a standard H.264 MP4 (up to 1080p) on your own device before upload, using the browser's built-in video encoder. Files that are already web-friendly MP4s are uploaded untouched. A thumbnail is made at the same time.
 - **Reliable uploads.** Files go up in small pieces with automatic retries, so big videos get past hosting limits and flaky phone connections. Interrupted uploads resume where they stopped.
 - **Short links and rich embeds.** Every video gets a 7-character link with OpenGraph and Twitter player tags (inline video in Discord, Slack, Telegram, X and most forums) plus oEmbed, and an iframe player at `/e/<id>`.
@@ -57,6 +57,14 @@ You still run `php lib/setup.php` on the server once (step 5 above).
 ## Using it from your phone
 
 - **iPhone:** open the site in Safari, tap *Share → Add to Home Screen*. Clipbin then opens like an app. Tap the upload box to pick a video from Photos. After upload the link is ready to copy or send with the *Share* button.
+- **iPhone share menu:** Safari can't add itself to the share menu, so a Shortcut does it. Sign in to Clipbin, open *Upload from the iPhone share menu* under the upload box, copy the shortcut address, and then:
+  1. In the **Shortcuts** app tap **+** and name it *Clipbin*.
+  2. Open its details (ⓘ), turn on **Show in Share Sheet**, and set it to receive **Media** only.
+  3. Add **Encode Media** on *Shortcut Input*; under *Show More* set Size to **1920×1080** (not HEVC). This makes an H.264 MP4 that plays everywhere.
+  4. Add **Get Contents of URL** with the copied address; under *Show More* choose Method **POST**, Request Body **Form**, and add a **File** field named `video` set to *Encoded Media*.
+  5. Add **Copy to Clipboard** (*Contents of URL*) and **Show Notification** (*Contents of URL*).
+
+  Now share a video from Photos and pick *Clipbin*: it uploads, and the link is on your clipboard when the notification appears (or an error saying what went wrong). The address contains a secret key; *Make a new key* on the same panel turns the old one off. The video goes up in one request, so it is limited by `upload_max_filesize` in `.user.ini` (1 GB); choose 1280×720 in step 3 for long clips. The thumbnail is made the next time you open your library.
 - **Android:** open the site in Chrome, tap the menu → *Add to Home screen* (or *Install app*). Clipbin then shows up in the share sheet: share a video from Photos/Gallery to Clipbin and it uploads straight away.
 - Keep the page open while a video converts and uploads. The screen is kept awake automatically where the browser allows it. If you lock the phone or switch apps anyway, the upload pauses and continues from the last piece when you come back (a conversion starts over by itself). Even if the phone reloads the page, the upload picks up again the next time you open Clipbin.
 
@@ -93,7 +101,8 @@ php -S localhost:8080 router.php
 | Path | What |
 | --- | --- |
 | `index.php` | Sign-in, upload area and your library |
-| `api.php` | Upload (init, chunk, status, finish), rename and delete; needs sign-in |
+| `api.php` | Upload (init, chunk, status, finish), thumbnails, rename and delete; needs sign-in |
+| `share.php` | One-request upload with the secret key, used by the iPhone shortcut |
 | `watch.php` | Public player page with OpenGraph / Twitter / oEmbed tags |
 | `embed.php` | Bare player for iframes (`/e/<id>`) |
 | `oembed.php` | oEmbed JSON endpoint (`/oembed?url=…`) |
