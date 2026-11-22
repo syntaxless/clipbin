@@ -28,6 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = ($pw === '' || $pw === 'change-me')
             ? 'Set a password in config.php first.'
             : 'Wrong password.';
+    } elseif ($action === 'new_key' && is_logged_in()) {
+        upload_key(true);
+        header('Location: ' . base_url() . '/?newkey=1#iphone');
+        exit;
     } elseif ($action === 'logout') {
         $_SESSION = [];
         session_destroy();
@@ -79,6 +83,34 @@ page_head(e($site) . ' · Upload');
     <div id="jobs"></div>
 </section>
 
+<details class="card iphone" id="iphone"<?= isset($_GET['newkey']) ? ' open' : '' ?>>
+    <summary>Upload from the iPhone share menu</summary>
+    <p class="muted small">Make a shortcut once, and <strong>Clipbin</strong> shows up when you tap Share on a video in Photos. It uploads the video and copies the link for you.</p>
+    <?php if (isset($_GET['newkey'])): ?>
+        <p class="small ok-text">New key made. The old shortcut address stops working: paste the new one into your shortcut.</p>
+    <?php endif; ?>
+    <label class="small">Shortcut address (keep it private, it lets anyone upload)
+        <span class="copyrow">
+            <input type="text" readonly value="<?= e(share_url()) ?>" onfocus="this.select()">
+            <button class="btn small" type="button" data-copy="<?= e(share_url()) ?>">Copy</button>
+        </span>
+    </label>
+    <ol class="small steps">
+        <li>Open the <strong>Shortcuts</strong> app, tap <strong>+</strong>, and name the shortcut <strong>Clipbin</strong>.</li>
+        <li>Tap the <strong>ⓘ</strong> (or the name at the top → Details), turn on <strong>Show in Share Sheet</strong>, then set what it receives to <strong>Media</strong> only.</li>
+        <li>Add <strong>Encode Media</strong>. Input: <em>Shortcut Input</em>. Tap <em>Show More</em>, set Size to <strong>1920×1080</strong> (not HEVC).</li>
+        <li>Add <strong>Get Contents of URL</strong>. URL: paste the address above. Tap <em>Show More</em>: Method <strong>POST</strong>, Request Body <strong>Form</strong>, add a <strong>File</strong> field named <code>video</code> set to <em>Encoded Media</em>.</li>
+        <li>Add <strong>Copy to Clipboard</strong> (input: <em>Contents of URL</em>), then <strong>Show Notification</strong> with <em>Contents of URL</em> as the text.</li>
+        <li>Try it: in Photos, open a video, tap <strong>Share → Clipbin</strong>. The link is copied when the notification shows.</li>
+    </ol>
+    <p class="muted small">One upload can be up to <?= e(ini_get('upload_max_filesize')) ?>B. For longer videos, pick 1280×720 in step 3, or upload here instead. Thumbnails for shortcut uploads are made the next time you open this page.</p>
+    <form method="post">
+        <input type="hidden" name="action" value="new_key">
+        <input type="hidden" name="csrf" value="<?= e($csrf) ?>">
+        <button class="btn ghost small" type="submit">Make a new key</button>
+    </form>
+</details>
+
 <section class="library">
     <div class="library-head">
         <h2>Your videos <span class="muted" id="count"><?= count($videos) ?></span></h2>
@@ -93,7 +125,7 @@ page_head(e($site) . ' · Upload');
     <?php endif; ?>
     <ul class="grid" id="grid">
         <?php foreach ($videos as $v): ?>
-            <li class="tile" data-id="<?= e($v['id']) ?>">
+            <li class="tile" data-id="<?= e($v['id']) ?>"<?= is_file(media_dir() . '/' . $v['id'] . '.jpg') ? '' : ' data-needs-thumb="' . e(video_url($v)) . '"' ?>>
                 <a class="thumb" href="<?= e(page_url($v)) ?>">
                     <img src="<?= e(thumb_url($v)) ?>" alt="" loading="lazy" onerror="this.remove()">
                     <span class="dur"><?= e(fmt_duration((float) $v['duration'])) ?></span>

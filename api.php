@@ -199,6 +199,33 @@ switch ($action) {
         out(['id' => $id, 'url' => page_url($v)]);
     }
 
+    // Thumbnail (and size, if unknown) for a video that arrived without the
+    // browser, e.g. from the iPhone shortcut. Made by the library page.
+    case 'thumb': {
+        $b = json_body();
+        $v = find_video((string) ($b['id'] ?? ''));
+        if (!$v || $v['status'] !== 'ready') {
+            fail('Not found', 404);
+        }
+        $media = media_dir();
+        $thumb = (string) ($b['thumb'] ?? '');
+        if (!is_file("$media/{$v['id']}.jpg") && preg_match('#^data:image/jpeg;base64,#', $thumb)) {
+            $bin = base64_decode(substr($thumb, 23), true);
+            $info = $bin ? @getimagesizefromstring($bin) : false;
+            if ($info && $info[2] === IMAGETYPE_JPEG && strlen($bin) < 4 * 1024 * 1024) {
+                file_put_contents("$media/{$v['id']}.jpg", $bin);
+            }
+        }
+        db()->prepare('UPDATE videos SET width = ?, height = ?, duration = ? WHERE id = ?')
+            ->execute([
+                (int) $v['width'] ?: max(0, (int) ($b['width'] ?? 0)),
+                (int) $v['height'] ?: max(0, (int) ($b['height'] ?? 0)),
+                (float) $v['duration'] ?: max(0.0, (float) ($b['duration'] ?? 0)),
+                $v['id'],
+            ]);
+        out(['ok' => true, 'thumb' => is_file("$media/{$v['id']}.jpg") ? thumb_url($v) : '']);
+    }
+
     case 'rename': {
         $b = json_body();
         $id = (string) ($b['id'] ?? '');

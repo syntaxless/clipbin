@@ -229,7 +229,34 @@ async function takeShared() {
   } catch (e) { console.warn('share pickup failed', e); }
   if (location.search.includes('shared=1')) history.replaceState(null, '', location.pathname);
 }
-resumeSaved().then(takeShared);
+resumeSaved().then(takeShared).then(fillThumbs);
+
+// Videos uploaded by the iPhone shortcut arrive without a thumbnail; make one
+// here from the stored MP4, one video at a time.
+async function fillThumbs() {
+  for (const tile of document.querySelectorAll('.tile[data-needs-thumb]')) {
+    try {
+      const m = await thumbnailAndMeta(tile.dataset.needsThumb);
+      const res = await api('thumb', { id: tile.dataset.id, ...m });
+      delete tile.dataset.needsThumb;
+      if (res.thumb) {
+        const a = tile.querySelector('.thumb');
+        a.querySelector('img')?.remove();
+        const img = el('img');
+        img.alt = '';
+        img.src = res.thumb + '?' + Date.now();
+        a.prepend(img);
+      }
+      if (m.duration) tile.querySelector('.dur').textContent = fmtDur(m.duration);
+    } catch (e) { console.warn('thumbnail failed', tile.dataset.id, e); }
+  }
+}
+
+function fmtDur(s) {
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`;
+}
 
 // ---- UI --------------------------------------------------------------------
 
@@ -629,15 +656,15 @@ async function convert(job, file, info) {
   return new Blob([output.target.buffer], { type: 'video/mp4' });
 }
 
-function thumbnailAndMeta(blob) {
+function thumbnailAndMeta(source) {
   return new Promise((resolve, reject) => {
     const v = document.createElement('video');
-    const url = URL.createObjectURL(blob);
+    const url = typeof source === 'string' ? source : URL.createObjectURL(source);
     let done = false;
     const finish = (val, err) => {
       if (done) return;
       done = true;
-      URL.revokeObjectURL(url);
+      if (url !== source) URL.revokeObjectURL(url);
       v.removeAttribute('src');
       v.load();
       err ? reject(err) : resolve(val);
