@@ -37,4 +37,4 @@ page_head(e(config('site_name')) . ' · Settings');
     </form>
 </section>
 <?php
-page_foot('<script type="module" src="' . e(base_url()) . '/assets/copy.js"></script>');
+page_foot('<script type="module" src="' . e(asset_url('copy.js')) . '"></script>');

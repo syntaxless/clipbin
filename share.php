@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     reply('Pastey: this address is for the iPhone shortcut. It only accepts uploads.', 405);
 }
 
-$given = (string) ($_GET['key'] ?? $_SERVER['HTTP_X_CLIPBIN_KEY'] ?? $_POST['key'] ?? '');
+$given = (string) ($_GET['key'] ?? $_SERVER['HTTP_X_PASTEY_KEY'] ?? $_POST['key'] ?? '');
 $key = setting('upload_key');
 if (!$key || !hash_equals($key, $given)) {
     usleep(400000); // slow down guessing

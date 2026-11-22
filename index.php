@@ -114,5 +114,5 @@ page_head(e($site) . ' · Upload');
     </ul>
 </section>
 <?php
-page_foot('<script>window.CLIPBIN = ' . json_encode($cfg, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) . ';</script>'
-    . '<script type="module" src="' . e(base_url()) . '/assets/upload.js"></script>');
+page_foot('<script>window.PASTEY = ' . json_encode($cfg, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES) . ';</script>'
+    . '<script type="module" src="' . e(asset_url('upload.js')) . '"></script>');

@@ -1,7 +1,7 @@
 // Pastey service worker. Its only job: receive videos shared from the
 // phone's share sheet (Android "Share to Pastey") and hand them to the page.
 // It deliberately caches nothing else, so the site never goes stale.
-const SHARE_CACHE = 'clipbin-share';
+const SHARE_CACHE = 'pastey-share';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));

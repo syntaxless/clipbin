@@ -96,4 +96,4 @@ page_head(e($title) . ' · ' . e($site), $head);
     </div>
 </section>
 <?php
-page_foot('<script src="' . e(base_url()) . '/assets/copy.js"></script>');
+page_foot('<script src="' . e(asset_url('copy.js')) . '"></script>');
