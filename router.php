@@ -6,6 +6,12 @@ if (preg_match('#^/(config\.php|config\.sample\.php|router\.php|lib/|data/|\.git
     http_response_code(403);
     exit('Forbidden');
 }
+// Same allowlist as media/.htaccess.
+if (str_starts_with($path, '/media/')
+    && !preg_match('#^/media/[A-Za-z0-9]{6,12}(_t)?\.(mp4|jpg|png|gif|webp|avif|mp3|m4a|aac|wav|ogg|flac|pdf|zip)$#', $path)) {
+    http_response_code(403);
+    exit('Forbidden');
+}
 if (preg_match('#^/e/([A-Za-z0-9]{6,12})/?$#', $path, $m)) {
     $_GET['id'] = $m[1];
     $_SERVER['SCRIPT_NAME'] = '/embed.php';

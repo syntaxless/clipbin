@@ -1,11 +1,35 @@
-# Only videos and thumbnails live here. Never run scripts from this folder.
+# Uploaded files live here, always named by Pastey as <id>.<ext> (or
+# <id>_t.jpg for a thumbnail), with the type checked from the file's bytes.
+# Only names of that shape with an allowed type are served; anything else
+# (a script, a web page, an SVG) is refused, and nothing here ever runs.
 Options -Indexes -ExecCGI
-<FilesMatch "\.(php|phtml|phar|pl|py|cgi|sh|htm|html|svg)$">
-  Require all denied
+Require all denied
+<FilesMatch "^[A-Za-z0-9]{6,12}(_t)?\.(mp4|jpg|png|gif|webp|avif|mp3|m4a|aac|wav|ogg|flac|pdf|zip)$">
+  Require all granted
 </FilesMatch>
+<IfModule mod_mime.c>
+  RemoveHandler .php .phtml .phar .pl .py .cgi .sh
+  RemoveType .php .phtml .phar
+</IfModule>
 AddType video/mp4 .mp4
+AddType image/jpeg .jpg
+AddType image/png .png
+AddType image/gif .gif
+AddType image/webp .webp
+AddType image/avif .avif
+AddType audio/mpeg .mp3
+AddType audio/mp4 .m4a
+AddType audio/aac .aac
+AddType audio/wav .wav
+AddType audio/ogg .ogg
+AddType audio/flac .flac
+AddType application/pdf .pdf
+AddType application/zip .zip
 <IfModule mod_headers.c>
   Header set Cache-Control "public, max-age=31536000, immutable"
   Header set Access-Control-Allow-Origin "*"
   Header set X-Content-Type-Options "nosniff"
+  <FilesMatch "\.zip$">
+    Header set Content-Disposition "attachment"
+  </FilesMatch>
 </IfModule>
