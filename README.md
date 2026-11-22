@@ -54,6 +54,42 @@ The workflow in `.github/workflows/deploy.yml` copies the code to DreamHost when
 
 You still run `php lib/setup.php` on the server once (step 5 above).
 
+### Moving to a new address
+
+Nothing in the database or the video files contains the site's address: every link is built from `base_url` in `config.php`. So moving to a new domain is "copy the folder, change one line, redirect the old address", and the old site keeps working until the new one is ready.
+
+1. **Add the new site** in the DreamHost panel (*Websites → Add Website*, e.g. `media.example.com`, same PHP version and same SSH user) and add its free Let's Encrypt certificate. Don't delete the old site.
+2. **Copy everything,** including the database and videos. If DreamHost put placeholder files in the new folder, move them out first as in step 4 of the install. `-a` keeps permissions and the hidden `.htaccess` files:
+
+   ```sh
+   cp -a ~/clips.example.com/. ~/media.example.com/
+   ```
+
+3. **Point it at the new address:** in `~/media.example.com/config.php` set `'base_url' => 'https://media.example.com'`. Open the new address, sign in and play a video.
+4. **Switch over.** Bring across anything uploaded since step 2, then move the old folder aside as a backup and leave only a redirect in its place, so links you already shared keep working:
+
+   ```sh
+   rsync -a ~/clips.example.com/data/ ~/media.example.com/data/
+   rsync -a ~/clips.example.com/media/ ~/media.example.com/media/
+   mv ~/clips.example.com ~/clips.example.com-backup
+   mkdir ~/clips.example.com
+   cp -a ~/clips.example.com-backup/.well-known ~/clips.example.com/ 2>/dev/null
+   cat > ~/clips.example.com/.htaccess <<'HT'
+   RewriteEngine On
+   RewriteRule ^\.well-known/ - [L]
+   # 308 keeps uploads from a not-yet-updated iPhone shortcut working (POST stays POST)
+   RewriteRule ^share\.php$ https://media.example.com/share.php [R=308,L,QSA]
+   RewriteRule ^(.*)$ https://media.example.com/$1 [R=301,L,QSA]
+   HT
+   ```
+
+   Keep the old site in the DreamHost panel so the redirect keeps answering. Once the new site has worked for a while, you can delete `~/clips.example.com-backup`.
+5. **Update the rest:**
+   - *Auto-deploy:* change the `DH_PATH` secret (and `DH_HOST` if it was the old domain) to the new folder.
+   - *iPhone shortcut:* copy the new address from **Settings** and paste it into *Get Contents of URL*. The secret key stays the same, only the domain changes.
+   - *Home Screen app:* an installed app belongs to its address, so delete the old icon and add the new address to the Home Screen again.
+   - *Sign-in:* you'll need to sign in once on the new address.
+
 ## Using it from your phone
 
 - **iPhone:** open the site in Safari, tap *Share → Add to Home Screen*. Pastey then opens like an app. Tap the upload box to pick a video from Photos. After upload the link is ready to copy or send with the *Share* button.
