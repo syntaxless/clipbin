@@ -160,3 +160,22 @@ input:focus-visible, button:focus-visible, .drop:focus-visible { outline: 2px so
   border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
 }
 .ok-text { color: var(--ok); }
+
+/* Pull to refresh (Home Screen app only, see assets/ptr.js) */
+html.ptr-on, html.ptr-on body { overscroll-behavior-y: none; }
+.ptr {
+  position: fixed; top: 0; left: 50%; z-index: 50;
+  width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--line);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .18);
+  transform: translate(-50%, -50px); opacity: 0; pointer-events: none;
+}
+.ptr.back { transition: transform .2s ease, opacity .2s ease; }
+.ptr-icon {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2.5px solid var(--muted); border-top-color: transparent;
+}
+.ptr.ready .ptr-icon { border-color: var(--accent); border-top-color: transparent; }
+.ptr.loading .ptr-icon { border-color: var(--accent); border-top-color: transparent; animation: ptr-spin .7s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }

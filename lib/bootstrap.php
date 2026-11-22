@@ -345,6 +345,7 @@ function page_head(string $title, string $extraHead = ''): void
 {
     $site = e(config('site_name'));
     $base = e(base_url());
+    $cssv = (int) @filemtime(__DIR__ . '/../assets/app.css');
     echo <<<HTML
 <!doctype html>
 <html lang="en">
@@ -352,7 +353,7 @@ function page_head(string $title, string $extraHead = ''): void
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{$title}</title>
-<link rel="stylesheet" href="{$base}/assets/app.css">
+<link rel="stylesheet" href="{$base}/assets/app.css?v={$cssv}">
 <link rel="icon" href="{$base}/assets/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="{$base}/assets/icon-180.png">
 <link rel="manifest" href="{$base}/manifest.webmanifest">
@@ -371,5 +372,6 @@ function page_foot(string $scripts = ''): void
 {
     $base = json_encode(base_url() . '/');
     $sw = "<script>if('serviceWorker' in navigator){navigator.serviceWorker.register({$base}+'sw.js',{scope:{$base}}).catch(()=>{});}</script>";
-    echo "</main>\n{$scripts}\n{$sw}\n</body>\n</html>\n";
+    $ptr = '<script src="' . e(base_url()) . '/assets/ptr.js?v=' . (int) @filemtime(__DIR__ . '/../assets/ptr.js') . '"></script>';
+    echo "</main>\n{$scripts}\n{$ptr}\n{$sw}\n</body>\n</html>\n";
 }
