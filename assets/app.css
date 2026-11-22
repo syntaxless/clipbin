@@ -154,8 +154,7 @@ input:focus-visible, button:focus-visible, .drop:focus-visible { outline: 2px so
 .iphone { margin-top: 16px; padding: 14px 18px; }
 .iphone summary { cursor: pointer; font-weight: 600; }
 .iphone[open] summary { margin-bottom: 8px; }
-.iphone .steps { padding-left: 20px; margin: 12px 0; display: grid; gap: 6px; }
-.iphone code { font-size: 12px; }
+.iphone form { margin-top: 12px; }
 .copyrow { display: flex; gap: 8px; min-width: 0; }
 .copyrow input {
   flex: 1; min-width: 0; font: 13px ui-monospace, Menlo, monospace; color: inherit; background: var(--bg);
