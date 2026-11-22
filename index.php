@@ -85,7 +85,7 @@ page_head(e($site) . ' · Upload');
 
 <details class="card iphone" id="iphone"<?= isset($_GET['newkey']) ? ' open' : '' ?>>
     <summary>Upload from the iPhone share menu</summary>
-    <p class="muted small">Make a shortcut once, and <strong>Clipbin</strong> shows up when you tap Share on a video in Photos. It uploads the video and copies the link for you.</p>
+    <p class="muted small">Make a shortcut once, and <strong>Pastey</strong> shows up when you tap Share on a video in Photos. It uploads the video and copies the link for you.</p>
     <?php if (isset($_GET['newkey'])): ?>
         <p class="small ok-text">New key made. The old shortcut address stops working: paste the new one into your shortcut.</p>
     <?php endif; ?>
@@ -96,12 +96,12 @@ page_head(e($site) . ' · Upload');
         </span>
     </label>
     <ol class="small steps">
-        <li>Open the <strong>Shortcuts</strong> app, tap <strong>+</strong>, and name the shortcut <strong>Clipbin</strong>.</li>
+        <li>Open the <strong>Shortcuts</strong> app, tap <strong>+</strong>, and name the shortcut <strong>Pastey</strong>.</li>
         <li>Tap the <strong>ⓘ</strong> (or the name at the top → Details), turn on <strong>Show in Share Sheet</strong>, then set what it receives to <strong>Media</strong> only.</li>
         <li>Add <strong>Encode Media</strong>. Input: <em>Shortcut Input</em>. Tap <em>Show More</em>, set Size to <strong>1920×1080</strong> (not HEVC).</li>
         <li>Add <strong>Get Contents of URL</strong>. URL: paste the address above. Tap <em>Show More</em>: Method <strong>POST</strong>, Request Body <strong>Form</strong>, add a <strong>File</strong> field named <code>video</code> set to <em>Encoded Media</em>.</li>
         <li>Add <strong>Copy to Clipboard</strong> (input: <em>Contents of URL</em>), then <strong>Show Notification</strong> with <em>Contents of URL</em> as the text.</li>
-        <li>Try it: in Photos, open a video, tap <strong>Share → Clipbin</strong>. The link is copied when the notification shows.</li>
+        <li>Try it: in Photos, open a video, tap <strong>Share → Pastey</strong>. The link is copied when the notification shows.</li>
     </ol>
     <p class="muted small">One upload can be up to <?= e(ini_get('upload_max_filesize')) ?>B. For longer videos, pick 1280×720 in step 3, or upload here instead. Thumbnails for shortcut uploads are made the next time you open this page.</p>
     <form method="post">

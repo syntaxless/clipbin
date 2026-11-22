@@ -1,6 +1,6 @@
 {
-  "name": "Clipbin",
-  "short_name": "Clipbin",
+  "name": "Pastey",
+  "short_name": "Pastey",
   "description": "Upload a video, get a short link.",
   "start_url": "./",
   "scope": "./",

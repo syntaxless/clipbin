@@ -1,4 +1,4 @@
-// Clipbin uploader: converts video to web-friendly MP4 in the browser
+// Pastey uploader: converts video to web-friendly MP4 in the browser
 // (WebCodecs via mediabunny), makes a thumbnail, then uploads in chunks.
 import * as MB from './vendor/mediabunny.min.mjs';
 import './copy.js';

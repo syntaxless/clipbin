@@ -1,5 +1,5 @@
-// Clipbin service worker. Its only job: receive videos shared from the
-// phone's share sheet (Android "Share to Clipbin") and hand them to the page.
+// Pastey service worker. Its only job: receive videos shared from the
+// phone's share sheet (Android "Share to Pastey") and hand them to the page.
 // It deliberately caches nothing else, so the site never goes stale.
 const SHARE_CACHE = 'clipbin-share';
 

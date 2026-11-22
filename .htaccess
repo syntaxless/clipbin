@@ -1,4 +1,4 @@
-# Clipbin - Apache rules (DreamHost shared hosting supports all of this)
+# Pastey - Apache rules (DreamHost shared hosting supports all of this)
 Options -Indexes
 DirectoryIndex index.php
 

@@ -2,7 +2,7 @@
 // Copy this file to config.php and edit it.
 return [
     // Shown in the header, page titles and embeds.
-    'site_name' => 'Clipbin',
+    'site_name' => 'Pastey',
 
     // Full public address of the site, no trailing slash.
     // Leave empty to detect it from the request.
