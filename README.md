@@ -24,7 +24,7 @@ You need a DreamHost shared (or VPS) plan with PHP 8.1 or newer. Everything belo
    ```sh
    cd ~/clips.example.com
    mkdir -p ~/clips-old && mv ./* ./.[!.]* ~/clips-old/ 2>/dev/null
-   git clone https://github.com/syntaxless/clipbin.git .
+   git clone https://github.com/syntaxless/pastey.git .
    ```
 
    The second line moves DreamHost's placeholder files out of the way into `~/clips-old` so the folder is empty.
@@ -50,7 +50,7 @@ The workflow in `.github/workflows/deploy.yml` copies the code to DreamHost when
 | `DH_HOST` | Your server's host name, e.g. `iad1-shared-b7-01.dreamhost.com` (shown on the SFTP user page), or your domain |
 | `DH_USER` | Your SSH user |
 | `DH_PATH` | The site folder, e.g. `/home/youruser/clips.example.com` |
-| `DH_SSH_KEY` | A private SSH key. Make one with `ssh-keygen -t ed25519 -f clipbin-deploy -N ""`, put the contents of `clipbin-deploy.pub` on its own line in `~/.ssh/authorized_keys` on DreamHost, and paste the contents of `clipbin-deploy` here |
+| `DH_SSH_KEY` | A private SSH key. Make one with `ssh-keygen -t ed25519 -f pastey-deploy -N ""`, put the contents of `pastey-deploy.pub` on its own line in `~/.ssh/authorized_keys` on DreamHost, and paste the contents of `pastey-deploy` here |
 
 You still run `php lib/setup.php` on the server once (step 5 above).
 

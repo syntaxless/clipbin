@@ -39,6 +39,27 @@ function base_url(): string
     return ($https ? 'https' : 'http') . '://' . $host . $dir;
 }
 
+// Older installs kept the database as data/clipbin.sqlite (the app's first
+// name). Move it, and any SQLite side files, to the new name once. If the
+// move fails (another request got there first, or the folder isn't
+// writable) we just carry on: either the new file now exists, or we keep
+// using the old one where it is.
+function migrate_old_db(string $dir, string &$file): void
+{
+    $old = $dir . '/clipbin.sqlite';
+    if (is_file($file) || !is_file($old)) {
+        return;
+    }
+    foreach (['-wal', '-shm', '-journal'] as $side) {
+        if (is_file($old . $side) && !is_file($file . $side)) {
+            @rename($old . $side, $file . $side);
+        }
+    }
+    if (!@rename($old, $file) && !is_file($file)) {
+        $file = $old;
+    }
+}
+
 function db(): PDO
 {
     static $pdo = null;
@@ -49,7 +70,9 @@ function db(): PDO
     if (!is_dir($dir)) {
         mkdir($dir, 0755, true);
     }
-    $pdo = new PDO('sqlite:' . $dir . '/clipbin.sqlite');
+    $file = $dir . '/pastey.sqlite';
+    migrate_old_db($dir, $file);
+    $pdo = new PDO('sqlite:' . $file);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec('PRAGMA busy_timeout = 5000');
@@ -295,7 +318,13 @@ function start_session(): void
     ini_set('session.gc_probability', '1');
     ini_set('session.gc_divisor', '100');
     ini_set('session.use_strict_mode', '1');
-    session_name('clipbin');
+    session_name('pastey');
+    // Logins made before the rename used a cookie called "clipbin". The
+    // session file itself doesn't depend on the name, so pick it up under
+    // the new cookie and drop the old one, instead of signing people out.
+    $old = $_COOKIE['clipbin'] ?? '';
+    $carry = !isset($_COOKIE['pastey']) && preg_match('/^[A-Za-z0-9,-]{22,256}$/', $old)
+        && is_file($dir . '/sess_' . $old);
     session_set_cookie_params([
         'lifetime' => 60 * 60 * 24 * 30,
         'path' => '/',
@@ -303,7 +332,13 @@ function start_session(): void
         'samesite' => 'Lax',
         'secure' => str_starts_with(base_url(), 'https://'),
     ]);
+    if ($carry) {
+        session_id($old);
+    }
     session_start();
+    if ($old !== '' && !headers_sent()) {
+        setcookie('clipbin', '', ['expires' => 1, 'path' => '/']);
+    }
 }
 
 function is_logged_in(): bool
@@ -340,6 +375,13 @@ function check_csrf(?string $t): bool
 }
 
 // ---- Layout --------------------------------------------------------------
+
+// Link to a file in assets/ with its change time attached, so phones fetch
+// the new copy after a deploy instead of running a stale cached one.
+function asset_url(string $name): string
+{
+    return base_url() . '/assets/' . $name . '?v=' . (int) @filemtime(__DIR__ . '/../assets/' . $name);
+}
 
 function page_head(string $title, string $extraHead = ''): void
 {

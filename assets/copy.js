@@ -35,4 +35,4 @@ document.addEventListener('click', async (ev) => {
   } catch { /* user closed the sheet */ }
 });
 setupShare();
-window.clipbinSetupShare = setupShare;
+window.pasteySetupShare = setupShare;

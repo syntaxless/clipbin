@@ -3,7 +3,7 @@
 import * as MB from './vendor/mediabunny.min.mjs';
 import './copy.js';
 
-const C = window.CLIPBIN;
+const C = window.PASTEY;
 const drop = document.getElementById('drop');
 const fileInput = document.getElementById('file');
 const jobs = document.getElementById('jobs');
@@ -139,7 +139,7 @@ const store = {
     if (this.db) return this.db;
     this.db = new Promise((resolve, reject) => {
       if (!window.indexedDB) return reject(new Error('no IndexedDB'));
-      const req = indexedDB.open('clipbin', 1);
+      const req = indexedDB.open('pastey', 1);
       req.onupgradeneeded = () => {
         req.result.createObjectStore('uploads', { keyPath: 'key' }); // details
         req.result.createObjectStore('blobs'); // the video itself, by the same key
@@ -217,21 +217,28 @@ function showWaiting(rec) {
 async function takeShared() {
   if (!('caches' in window)) return;
   try {
-    const cache = await caches.open('clipbin-share');
-    const keys = await cache.keys();
     const files = [];
-    for (const req of keys) {
-      const res = await cache.match(req);
-      const blob = await res.blob();
-      const name = decodeURIComponent(res.headers.get('X-Name') || 'shared.mp4');
-      files.push(new File([blob], name, { type: blob.type || 'video/mp4' }));
-      await cache.delete(req);
+    // 'clipbin-share' is where the service worker kept shares before the app
+    // was renamed; a phone still running the old worker may have left one there.
+    for (const name of ['pastey-share', 'clipbin-share']) {
+      if (name !== 'pastey-share' && !(await caches.has(name))) continue;
+      const cache = await caches.open(name);
+      for (const req of await cache.keys()) {
+        const res = await cache.match(req);
+        const blob = await res.blob();
+        const fname = decodeURIComponent(res.headers.get('X-Name') || 'shared.mp4');
+        files.push(new File([blob], fname, { type: blob.type || 'video/mp4' }));
+        await cache.delete(req);
+      }
+      if (name !== 'pastey-share') await caches.delete(name);
     }
     if (files.length) enqueue(files);
   } catch (e) { console.warn('share pickup failed', e); }
   if (location.search.includes('shared=1')) history.replaceState(null, '', location.pathname);
 }
 resumeSaved().then(takeShared).then(fillThumbs);
+// Upload storage from before the rename (it only ever held unfinished uploads).
+try { window.indexedDB?.deleteDatabase('clipbin'); } catch { /* ignore */ }
 
 // Videos uploaded by the iPhone shortcut arrive without a thumbnail; make one
 // here from the stored MP4, one video at a time.
@@ -314,7 +321,7 @@ function makeJob(file, opts = {}) {
       const share = el('button', 'btn small', 'Share');
       share.dataset.share = url;
       actions.append(link, copy, share);
-      window.clipbinSetupShare?.(actions);
+      window.pasteySetupShare?.(actions);
       navigator.clipboard?.writeText(url).then(() => { status.textContent = 'Ready, link copied'; }, () => {});
     },
     // retry: the upload can still be finished (it's saved), so offer a button.
