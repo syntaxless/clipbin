@@ -6,7 +6,8 @@ name: Deploy to DreamHost
 #   DH_USER     your DreamHost SSH user
 #   DH_PATH     the domain folder, e.g. /home/youruser/clips.example.com
 #   DH_SSH_KEY  a private key whose public half is in ~/.ssh/authorized_keys on DreamHost
-# Your config.php, database (data/) and videos (media/) on the server are never touched.
+# Your config.php (and backups of it), database (data/), videos and thumbnails
+# (media/) and HTTPS certificate files (.well-known/) on the server are never touched.
 
 on:
   push:
@@ -51,7 +52,8 @@ jobs:
           rsync -rlptz --delete \
             -e "ssh -i ~/.ssh/id_deploy" \
             --exclude='.git/' --exclude='.github/' \
-            --exclude='/config.php' \
+            --exclude='/config.php' --exclude='/config.php.*' \
+            --exclude='/.well-known/' \
             --include='/data/.htaccess' --exclude='/data/*' \
             --include='/media/.htaccess' --exclude='/media/*' \
             ./ "$DH_USER@$DH_HOST:$DH_PATH/"
