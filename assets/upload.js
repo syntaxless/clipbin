@@ -1,5 +1,8 @@
 // Pastey uploader: converts video to web-friendly MP4 in the browser
 // (WebCodecs via mediabunny), makes a thumbnail, then uploads in chunks.
+// Photos, audio, PDFs and ZIPs go up as they are (HEIC photos become JPEG
+// first where the browser can read them). Several photos picked together
+// become one gallery.
 import * as MB from './vendor/mediabunny.min.mjs';
 import './copy.js';
 
@@ -16,17 +19,47 @@ jobs.before(hint);
 const queue = [];
 let busy = false;
 
+// What the server takes; it checks the file itself again when it arrives.
+function kindOf(f) {
+  const t = (f.type || '').toLowerCase(), n = (f.name || '').toLowerCase();
+  if (t.startsWith('video/') || /\.(mp4|mov|m4v|mkv|webm|avi)$/.test(n)) return 'video';
+  if (/^image\/(jpeg|png|gif|webp|avif|heic|heif)/.test(t) || /\.(jpe?g|png|gif|webp|avif|heic|heif)$/.test(n)) return 'image';
+  if (t.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac)$/.test(n)) return 'audio';
+  if (/^application\/(pdf|zip|x-zip-compressed)$/.test(t) || /\.(pdf|zip)$/.test(n)) return 'file';
+  return null;
+}
+
 function enqueue(files) {
+  files = [...files].filter(Boolean);
+  // Two or more photos picked together share one gallery, made when the first one uploads.
+  const photos = files.filter((f) => kindOf(f) === 'image' && !waitingCards.has(fileSig(f)));
+  const group = photos.length > 1 ? { id: null, url: null, making: null } : null;
   for (const f of files) {
-    if (f && (f.type.startsWith('video/') || /\.(mp4|mov|m4v|mkv|webm|avi)$/i.test(f.name))) {
-      const sig = fileSig(f);
-      // Picked again after an interrupted upload that could not be kept on the phone.
-      const waiting = waitingCards.get(sig);
-      if (waiting) { waitingCards.delete(sig); waiting.card.remove(); }
-      queue.push(makeJob(f, waiting ? { saved: waiting.rec } : {}));
-    }
+    const kind = kindOf(f);
+    if (!kind) { showUnsupported(f); continue; }
+    const sig = fileSig(f);
+    // Picked again after an interrupted upload that could not be kept on the phone.
+    const waiting = waitingCards.get(sig);
+    if (waiting) { waitingCards.delete(sig); waiting.card.remove(); }
+    queue.push(makeJob(f, {
+      kind,
+      saved: waiting ? waiting.rec : null,
+      group: waiting?.rec.meta?.gallery ? { id: waiting.rec.meta.gallery } : (kind === 'image' ? group : null),
+    }));
   }
   run();
+}
+
+function showUnsupported(f) {
+  const card = el('div', 'job err');
+  card.append(el('div', 'job-name', f.name || 'File'),
+    el('div', 'job-status small', "Pastey can't take this kind of file. It takes videos, photos, audio, PDF and ZIP files."));
+  const actions = el('div', 'job-actions');
+  const ok = el('button', 'btn ghost small', 'OK');
+  ok.onclick = () => card.remove();
+  actions.append(ok);
+  card.append(actions);
+  jobs.prepend(card);
 }
 
 async function run() {
@@ -185,7 +218,10 @@ async function resumeSaved() {
     if (now - rec.saved > 2 * 86400 * 1000) { store.del(rec.key); continue; }
     const blob = rec.hasBlob ? await store.getBlob(rec.key) : null;
     if (blob && blob.size === rec.size) {
-      queue.push(makeJob({ name: rec.name }, { saved: rec, blob, resumed: true }));
+      queue.push(makeJob({ name: rec.name }, {
+        saved: rec, blob, resumed: true, kind: rec.kind || 'video',
+        group: rec.meta?.gallery ? { id: rec.meta.gallery } : null,
+      }));
     } else {
       showWaiting(rec);
     }
@@ -196,9 +232,9 @@ async function resumeSaved() {
 function showWaiting(rec) {
   const card = el('div', 'job err');
   card.append(el('div', 'job-name', rec.name),
-    el('div', 'job-status small', 'This upload was interrupted. Choose the same video again to finish it.'));
+    el('div', 'job-status small', 'This upload was interrupted. Choose the same file again to finish it.'));
   const actions = el('div', 'job-actions');
-  const pick = el('button', 'btn primary small', 'Choose video');
+  const pick = el('button', 'btn primary small', 'Choose it again');
   pick.onclick = () => fileInput.click();
   const forget = el('button', 'btn ghost small', 'Forget it');
   forget.onclick = () => {
@@ -227,7 +263,8 @@ async function takeShared() {
         const res = await cache.match(req);
         const blob = await res.blob();
         const fname = decodeURIComponent(res.headers.get('X-Name') || 'shared.mp4');
-        files.push(new File([blob], fname, { type: blob.type || 'video/mp4' }));
+        const type = blob.type && blob.type !== 'application/octet-stream' ? blob.type : (/\.\w+$/.test(fname) ? '' : 'video/mp4');
+        files.push(new File([blob], fname, { type }));
         await cache.delete(req);
       }
       if (name !== 'pastey-share') await caches.delete(name);
@@ -236,19 +273,29 @@ async function takeShared() {
   } catch (e) { console.warn('share pickup failed', e); }
   if (location.search.includes('shared=1')) history.replaceState(null, '', location.pathname);
 }
-resumeSaved().then(takeShared).then(fillThumbs);
+resumeSaved().then(takeShared).then(doTodo);
 // Upload storage from before the rename (it only ever held unfinished uploads).
 try { window.indexedDB?.deleteDatabase('clipbin'); } catch { /* ignore */ }
 
-// Videos uploaded by the iPhone shortcut arrive without a thumbnail; make one
-// here from the stored MP4, one video at a time.
-async function fillThumbs() {
-  for (const tile of document.querySelectorAll('.tile[data-needs-thumb]')) {
+// Things the iPhone shortcuts upload arrive without the browser's help: make
+// the missing thumbnails and lengths here, and turn HEIC photos the server
+// couldn't read into JPEG. One at a time, quietly.
+async function doTodo() {
+  for (const t of C.todo || []) {
     try {
-      const m = await thumbnailAndMeta(tile.dataset.needsThumb);
-      const res = await api('thumb', { id: tile.dataset.id, ...m });
-      delete tile.dataset.needsThumb;
-      if (res.thumb) {
+      const tile = document.querySelector(`.tile[data-id="${t.id}"]`);
+      let res;
+      if (t.kind === 'held') {
+        res = await convertHeld(t.id);
+        if (tile) tile.querySelector('.meta .small').textContent = tile.querySelector('.meta .small').textContent.replace(' · converting…', '');
+      } else {
+        const m = t.kind === 'video' ? await thumbnailAndMeta(t.src)
+          : t.kind === 'image' ? await imageThumb(await (await fetch(t.src)).blob())
+            : await audioMeta(t.src);
+        res = await api('thumb', { id: t.id, ...m });
+        if (m.duration && tile) tile.querySelector('.dur') && (tile.querySelector('.dur').textContent = fmtDur(m.duration));
+      }
+      if (res.thumb && tile) {
         const a = tile.querySelector('.thumb');
         a.querySelector('img')?.remove();
         const img = el('img');
@@ -256,9 +303,24 @@ async function fillThumbs() {
         img.src = res.thumb + '?' + Date.now();
         a.prepend(img);
       }
-      if (m.duration) tile.querySelector('.dur').textContent = fmtDur(m.duration);
-    } catch (e) { console.warn('thumbnail failed', tile.dataset.id, e); }
+    } catch (e) { console.warn('could not finish', t.id, e); }
   }
+}
+
+async function convertHeld(id) {
+  const res = await fetch(`${C.base}/api.php?action=held`, {
+    method: 'POST', headers: { 'X-CSRF': C.csrf, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }), credentials: 'same-origin',
+  });
+  if (!res.ok) throw new Error('could not fetch photo');
+  const jpeg = await toJpeg(await res.blob());
+  if (!jpeg) throw new Error("this browser can't read HEIC");
+  const t = await imageThumb(jpeg);
+  const form = new FormData();
+  form.append('id', id);
+  form.append('thumb', t.thumb);
+  form.append('file', jpeg, 'photo.jpg');
+  return api('replace', form);
 }
 
 function fmtDur(s) {
@@ -277,6 +339,7 @@ function el(tag, cls, text) {
 }
 
 function makeJob(file, opts = {}) {
+  const kind = opts.kind || 'video';
   const root = el('div', 'job');
   const name = el('div', 'job-name', file.name);
   const status = el('div', 'job-status muted small', opts.resumed ? 'Picking up where it left off…' : 'Waiting…');
@@ -292,6 +355,8 @@ function makeJob(file, opts = {}) {
   actions.appendChild(cancelBtn);
   const job = {
     file,
+    kind,
+    group: opts.group || null, // shared by the photos of one gallery
     // Saved state from the browser's storage: { key, blob, meta, uploadId, ... }.
     saved: opts.saved || null,
     blob: opts.blob || null, // the video being uploaded, once known
@@ -307,11 +372,11 @@ function makeJob(file, opts = {}) {
       if (rec) store.del(rec.key);
       return rec;
     },
-    done(url) {
+    done(url, inGallery) {
       job.forget();
       root.classList.add('ok');
       fill.style.width = '100%';
-      status.textContent = 'Ready';
+      status.textContent = inGallery ? 'Added to the gallery' : 'Ready';
       actions.innerHTML = '';
       const link = el('a', 'job-link', url);
       link.href = url;
@@ -322,7 +387,9 @@ function makeJob(file, opts = {}) {
       share.dataset.share = url;
       actions.append(link, copy, share);
       window.pasteySetupShare?.(actions);
-      navigator.clipboard?.writeText(url).then(() => { status.textContent = 'Ready, link copied'; }, () => {});
+      navigator.clipboard?.writeText(url).then(() => {
+        status.textContent = inGallery ? 'Added to the gallery, link copied' : 'Ready, link copied';
+      }, () => {});
     },
     // retry: the upload can still be finished (it's saved), so offer a button.
     fail(msg, retry) {
@@ -387,7 +454,9 @@ document.addEventListener('drop', (e) => { if (!drop.contains(e.target)) { e.pre
 async function api(action, body, query = '', { timeout = 0 } = {}) {
   let payload;
   const headers = { 'X-CSRF': C.csrf };
-  if (body instanceof Blob) {
+  if (body instanceof FormData) {
+    payload = body;
+  } else if (body instanceof Blob) {
     // Send binary as a multipart file field: shared-hosting firewalls often
     // reject raw binary request bodies but allow normal file uploads.
     payload = new FormData();
@@ -468,9 +537,13 @@ function confirmInline(btn) {
 // ---- Processing -------------------------------------------------------------
 
 async function processJob(job) {
-  // Resuming an upload whose video is saved in the browser: skip straight to uploading.
+  // Resuming an upload whose file is saved in the browser: skip straight to uploading.
   if (job.blob && job.saved) {
     await upload(job, job.blob, job.saved.meta);
+    return;
+  }
+  if (job.kind !== 'video') {
+    await processOther(job);
     return;
   }
   const { file } = job;
@@ -527,6 +600,7 @@ async function processJob(job) {
 
   // Keep the video in the browser until it's uploaded, so a reload doesn't lose it.
   const rec = {
+    kind: 'video',
     key: reuse ? reuse.key : newKey(),
     name: file.name,
     sig: fileSig(file),
@@ -541,6 +615,120 @@ async function processJob(job) {
   job.blob = blob;
   saveVideo(job);
   await upload(job, blob, meta);
+}
+
+// Photos, audio and files: no conversion, except HEIC photos, which only
+// Safari can show; those become JPEG here when the browser can read them.
+async function processOther(job) {
+  const { file, kind } = job;
+  let blob = file;
+  let meta = { title: file.name.replace(/\.[^.]+$/, ''), kind };
+  // Names the phone makes up (IMG_1234) say nothing; leave those untitled.
+  if (/^(img|image|photo|dsc|pxl|screenshot)[\s_-]*[\d_-]*$/i.test(meta.title)) meta.title = '';
+  if (kind === 'image') {
+    if (isHeic(file)) {
+      job.set('Converting photo to JPEG…', 0);
+      blob = (await toJpeg(file).catch(() => null)) || file;
+    }
+    job.set('Making thumbnail…');
+    const t = await imageThumb(blob).catch(() => null);
+    if (t) Object.assign(meta, t);
+  } else if (kind === 'audio') {
+    job.set('Reading audio…');
+    const m = await audioMeta(blob).catch(() => null);
+    if (m) Object.assign(meta, m);
+  }
+  if (job.cancelled) throw new Error('Cancelled');
+  if (blob.size > C.maxBytes) {
+    throw new Error(`File is ${(blob.size / 1048576).toFixed(0)} MB, the limit is ${(C.maxBytes / 1048576).toFixed(0)} MB`);
+  }
+  const old = job.saved;
+  const reuse = old && old.original && blob === file && old.size === file.size ? old : null;
+  if (old && !reuse) {
+    job.forget();
+    if (old.uploadId) api('delete', { id: old.uploadId }).catch(() => {});
+  }
+  if (reuse?.meta?.gallery) meta.gallery = reuse.meta.gallery;
+  job.saved = {
+    kind,
+    key: reuse ? reuse.key : newKey(),
+    name: file.name,
+    sig: fileSig(file),
+    size: blob.size,
+    original: blob === file,
+    meta,
+    uploadId: reuse ? reuse.uploadId : null,
+    hasBlob: false,
+    saved: Date.now(),
+  };
+  job.blob = blob;
+  saveVideo(job);
+  await upload(job, blob, meta);
+}
+
+const isHeic = (f) => /^image\/hei[cf]/i.test(f.type || '') || /\.hei[cf]$/i.test(f.name || '');
+
+// Draws a photo (upright, as the phone took it) onto a canvas no bigger than
+// max pixels on its longest side. Phones can't make huge canvases, so very
+// large photos are scaled to stay under about 16 megapixels.
+async function drawImage(blob, max) {
+  let src;
+  try {
+    src = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  } catch {
+    // Older Safari: fall back to an <img>.
+    src = await new Promise((resolve, reject) => {
+      const i = new Image();
+      const u = URL.createObjectURL(blob);
+      i.onload = () => { URL.revokeObjectURL(u); resolve(i); };
+      i.onerror = () => { URL.revokeObjectURL(u); reject(new Error('cannot read image')); };
+      i.src = u;
+    });
+  }
+  const W = src.width || src.naturalWidth, H = src.height || src.naturalHeight;
+  if (!W || !H) throw new Error('no size');
+  const scale = Math.min(1, max / Math.max(W, H), Math.sqrt(16e6 / (W * H)));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(W * scale));
+  c.height = Math.max(1, Math.round(H * scale));
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; // transparent PNGs get a white background in the JPEG thumbnail
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  src.close?.();
+  return { canvas: c, width: W, height: H };
+}
+
+const canvasBlob = (c, q) => new Promise((resolve) => c.toBlob(resolve, 'image/jpeg', q));
+
+async function imageThumb(blob) {
+  const { canvas, width, height } = await drawImage(blob, 800);
+  return { width, height, thumb: canvas.toDataURL('image/jpeg', 0.82) };
+}
+
+// HEIC (or anything the browser can read) to JPEG at full size. Drawing it
+// fresh also leaves the photo's location and other details behind.
+async function toJpeg(blob) {
+  const { canvas } = await drawImage(blob, 8192);
+  const out = await canvasBlob(canvas, 0.9);
+  return out && out.size ? new File([out], 'photo.jpg', { type: 'image/jpeg' }) : null;
+}
+
+function audioMeta(source) {
+  return new Promise((resolve, reject) => {
+    const a = document.createElement('audio');
+    const url = typeof source === 'string' ? source : URL.createObjectURL(source);
+    const finish = (val, err) => {
+      if (url !== source) URL.revokeObjectURL(url);
+      a.removeAttribute('src');
+      err ? reject(err) : resolve(val);
+    };
+    setTimeout(() => finish(null, new Error('timeout')), 15000);
+    a.preload = 'metadata';
+    a.onloadedmetadata = () => finish({ duration: isFinite(a.duration) ? a.duration : 0 });
+    a.onerror = () => finish(null, new Error('cannot read audio'));
+    a.src = url;
+  });
 }
 
 // Details are saved first (small, quick), then the video itself. If the
@@ -715,7 +903,7 @@ async function upload(job, blob, meta) {
       if (e.status === 404) return null; // expired or removed: start again
       throw e;
     });
-    if (s && s.status === 'ready') { job.done(s.url); return; }
+    if (s && s.status !== 'uploading') { job.done(s.gallery || s.url, !!s.gallery); return; }
     if (s && s.size === blob.size) {
       offset = s.received;
       chunkSize = s.chunkSize;
@@ -724,9 +912,14 @@ async function upload(job, blob, meta) {
       id = null;
     }
   }
+  if (job.group && !meta.gallery) {
+    meta.gallery = await ensureGallery(job);
+    updateRecord(job, { meta });
+  }
   if (!id) {
     const r = await retrying(job, () => api('init', {
       size: blob.size, title: meta.title, width: meta.width, height: meta.height, duration: meta.duration,
+      kind: job.kind,
     }), 'Starting upload…');
     id = r.id;
     chunkSize = r.chunkSize;
@@ -767,7 +960,7 @@ async function upload(job, blob, meta) {
       if (e.status === 401 || (e.status === 403 && /CSRF/.test(e.message))) {
         throw resumable('You were signed out. Reload the page and sign in, and the upload continues.');
       }
-      if (e.status === 404) throw new Error('The server lost this upload. Please upload the video again.');
+      if (e.status === 404) throw new Error('The server lost this upload. Please upload the file again.');
       if (e.status && e.status < 500) throw e;
       // Connection lost or server hiccup.
       const interrupted = hiddenCount !== hiddenBefore || !isActive();
@@ -783,14 +976,24 @@ async function upload(job, blob, meta) {
       }
       // Find out how much actually arrived (the last piece may have made it).
       const s = await retrying(job, () => api('status', { id }), 'Reconnecting…');
-      if (s.status === 'ready') { job.done(s.url); return; }
+      if (s.status !== 'uploading') { job.done(s.gallery || s.url, !!s.gallery); return; }
       offset = s.received;
       showProgress();
     }
   }
   job.set('Finishing…', 1);
   const res = await retrying(job, () => api('finish', meta, `&id=${id}`), 'Finishing…');
-  job.done(res.url);
+  job.done(res.gallery || res.url, !!res.gallery);
+}
+
+// The first photo of a group makes the gallery; the rest wait for it and join.
+async function ensureGallery(job) {
+  const g = job.group;
+  if (g.id) return g.id;
+  g.making ||= retrying(job, () => api('gallery', {}), 'Making gallery…')
+    .then((r) => { g.id = r.id; return r.id; })
+    .finally(() => { g.making = null; });
+  return g.making;
 }
 
 function resumable(msg) {

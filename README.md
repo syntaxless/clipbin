@@ -1,6 +1,6 @@
 # Pastey
 
-Your own little video host. Upload a clip, get a short link like `clips.example.com/k7Qx2mP`, and paste it into a forum, Discord, Slack or a chat. The link unfurls into a playable video, and the page itself is a clean player that works well on phones.
+Your own little media host. Upload a clip, a photo, a set of photos or a sound, get a short link like `clips.example.com/k7Qx2mP`, and paste it into a forum, Discord, Slack or a chat. The link unfurls into a playable video, and the page itself is a clean player that works well on phones.
 
 It is built to run on ordinary **shared PHP hosting** such as DreamHost: no Docker, no background workers, no database server and no ffmpeg on the server.
 
@@ -9,6 +9,7 @@ It is built to run on ordinary **shared PHP hosting** such as DreamHost: no Dock
 - **Upload from anywhere.** Drag and drop on a computer, tap to pick from your camera roll on a phone, or paste a file. Share videos straight to Pastey from your phone's share menu: on Android through the installed app, on iPhone through a small Shortcut.
 - **Converts in your browser.** Phone videos (like iPhone HEVC `.mov`), `.webm`, `.mkv` and 4K clips are converted to a standard H.264 MP4 (up to 1080p) on your own device before upload, using the browser's built-in video encoder. Files that are already web-friendly MP4s are uploaded untouched. A thumbnail is made at the same time.
 - **Reliable uploads.** Files go up in small pieces with automatic retries, so big videos get past hosting limits and flaky phone connections. Interrupted uploads resume where they stopped.
+- **Photos, galleries, audio and files too.** JPEG, PNG, GIF, WebP and HEIC photos, MP3, M4A, AAC, WAV, FLAC and OGG audio, and PDF and ZIP files each get their own link and page. Pick several photos at once and they become **one gallery** with one link (a grid that opens into a full-screen viewer you can swipe through). See [Photos, audio and files](#photos-audio-and-files).
 - **Short links and rich embeds.** Every video gets a 7-character link with OpenGraph and Twitter player tags (inline video in Discord, Slack, Telegram, X and most forums) plus oEmbed, and an iframe player at `/e/<id>`.
 - **Only you can upload.** Uploading needs your password; watching only needs the link. Rename and delete videos from your library.
 
@@ -103,8 +104,26 @@ Nothing in the database or the video files contains the site's address: every li
   Test it from Photos (open a video → Share → *Pastey*), not from inside the Shortcuts app, which has no video to send. When it works, the link is on your clipboard as the notification appears. When it doesn't, the notification starts with "Pastey:" and says what the server received.
 
   The address contains a secret key; *Make a new key* on the Settings page turns the old one off (paste the new address into the shortcut). The video goes up in one request, so it is limited by `upload_max_filesize` in `.user.ini` (1 GB); choose 1280×720 in step 3 for long clips. The thumbnail is made the next time you open your library.
-- **Android:** open the site in Chrome, tap the menu → *Add to Home screen* (or *Install app*). Pastey then shows up in the share sheet: share a video from Photos/Gallery to Pastey and it uploads straight away.
+- **iPhone share menu for photos:** the video shortcut above stays as it is. For photos make a second one, so several photos shared at once become one gallery:
+  1. In **Shortcuts** tap **+** and name it *Pastey Photos*. In its details (ⓘ) turn on **Show in Share Sheet** and set it to receive **Images** only.
+  2. Add **Date** (it gives *Current Date*). This marks the photos of one share as belonging together.
+  3. Add **Repeat with Each** and set it to *Shortcut Input*.
+  4. Inside the repeat, add **Convert Image**: input *Repeat Item*, format **JPEG**, and under **>** turn **Preserve Metadata** off. (This makes HEIC photos viewable everywhere and leaves their location behind.)
+  5. Inside the repeat, add **Get Contents of URL** with the same address as the video shortcut. Method **POST**, Request Body **Form**, add a **File** field named `file` set to *Converted Image*, and a **Text** field named `group` set to the *Date* from step 2.
+  6. After *End Repeat*, add **Get Item from List** (*Last Item* of *Repeat Results*), then **Copy to Clipboard** and **Show Notification** with that item.
+
+  Share one or more photos from Photos to *Pastey Photos*. One photo gets its own link; two or more become a gallery, and the gallery's link ends up on your clipboard. Sending several files in one request also makes a gallery, and any file type Pastey takes works through either shortcut.
+- **Android:** open the site in Chrome, tap the menu → *Add to Home screen* (or *Install app*). Pastey then shows up in the share sheet: share videos, photos or audio to Pastey and they upload straight away (several photos make a gallery).
 - Keep the page open while a video converts and uploads. The screen is kept awake automatically where the browser allows it. If you lock the phone or switch apps anyway, the upload pauses and continues from the last piece when you come back (a conversion starts over by itself). Even if the phone reloads the page, the upload picks up again the next time you open Pastey.
+
+## Photos, audio and files
+
+- **What is accepted.** Videos (converted as above), photos (JPEG, PNG, GIF, WebP, AVIF, HEIC), audio (MP3, M4A, AAC, WAV, FLAC, OGG) and PDF and ZIP files. The type is decided from the file's contents, never its name, and files are stored under a name Pastey picks (`media/<id>.<ext>`). `media/.htaccess` serves only those names and types, so an uploaded script or web page can never run or be served from your site.
+- **Your location stays private.** Photos from phones carry where they were taken. Pastey removes that (and the camera details) from JPEGs as they arrive, without re-compressing them; the rotation and colour profile are kept. HEIC photos are redrawn as JPEG, which drops it too.
+- **HEIC.** iPhone photos picked in Safari usually arrive as JPEG already. A HEIC that does arrive is turned into JPEG in your browser before upload, or on the server if its ImageMagick can read HEIC. If neither can, the photo waits, not publicly visible, until you next open your library in Safari on the iPhone, which converts it.
+- **Galleries.** Two or more photos picked or shared together make a gallery. Its link previews as the first photo; each photo also has its own page. Deleting a gallery deletes its photos. Videos and audio picked along with photos still get their own links.
+- **Limits.** Everything uses the same `max_upload_mb` limit as videos. Thumbnails are made by the server (PHP GD) where it can, otherwise by your browser the next time you open your library, the same as for videos from the iPhone shortcut.
+- **Existing links.** Old video links, embeds and files are untouched. The database gains a few columns automatically on the first visit after updating (no manual step).
 
 ## Browser support for conversion
 
@@ -139,15 +158,17 @@ php -S localhost:8080 router.php
 | Path | What |
 | --- | --- |
 | `index.php` | Sign-in, upload area and your library |
+| `lib/media.php` | Accepted file types, photo clean-up, thumbnails, galleries |
+| `assets/gallery.js` | Full-screen photo viewer on gallery pages |
 | `api.php` | Upload (init, chunk, status, finish), thumbnails, rename and delete; needs sign-in |
 | `share.php` | One-request upload with the secret key, used by the iPhone shortcut |
 | `settings.php` | Shows the iPhone shortcut address and makes a new key; needs sign-in |
-| `watch.php` | Public player page with OpenGraph / Twitter / oEmbed tags |
+| `watch.php` | Public page (video, photo, gallery, audio or file) with OpenGraph / Twitter / oEmbed tags |
 | `embed.php` | Bare player for iframes (`/e/<id>`) |
 | `oembed.php` | oEmbed JSON endpoint (`/oembed?url=…`) |
 | `assets/upload.js` | In-browser conversion, thumbnail and chunked upload |
 | `sw.js`, `manifest.webmanifest` | Home-screen install and Android share target |
 | `data/` | SQLite database, sessions, partial uploads (blocked from the web) |
-| `media/` | Finished `<id>.mp4` and `<id>.jpg` files, served directly by Apache |
+| `media/` | Finished `<id>.<ext>` files and `<id>.jpg` / `<id>_t.jpg` thumbnails, served directly by Apache |
 
 Video conversion uses [Mediabunny](https://mediabunny.dev) (MPL-2.0), vendored in `assets/vendor/`.

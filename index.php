@@ -58,30 +58,59 @@ if (!is_logged_in()) {
     exit;
 }
 
-$videos = db()->query('SELECT * FROM videos WHERE status = "ready" ORDER BY created_at DESC LIMIT 500')->fetchAll();
+// Your library: everything except the photos inside galleries.
+$rows = db()->query('SELECT * FROM videos WHERE status IN ("ready", "held") ORDER BY created_at DESC LIMIT 2000')->fetchAll();
+$children = [];
+foreach ($rows as $r) {
+    if ($r['parent'] !== '' && $r['status'] === 'ready') {
+        $children[$r['parent']][] = $r;
+    }
+}
+$videos = array_values(array_filter($rows, fn ($r) => $r['parent'] === ''
+    && ($r['kind'] !== 'gallery' || !empty($children[$r['id']]))));
+$videos = array_slice($videos, 0, 500);
+
+// Work your browser does for things that arrived without it (the iPhone
+// shortcuts): video thumbnails, photo thumbnails, audio length, HEIC to JPEG.
+$todo = [];
+foreach ($rows as $r) {
+    $m = media_dir() . '/' . $r['id'];
+    if ($r['status'] === 'held') {
+        $todo[] = ['id' => $r['id'], 'kind' => 'held'];
+    } elseif ($r['kind'] === 'video' && !is_file("$m.jpg")) {
+        $todo[] = ['id' => $r['id'], 'kind' => 'video', 'src' => file_url($r)];
+    } elseif ($r['kind'] === 'image' && !is_file("{$m}_t.jpg")) {
+        $todo[] = ['id' => $r['id'], 'kind' => 'image', 'src' => file_url($r)];
+    } elseif ($r['kind'] === 'audio' && (float) $r['duration'] <= 0) {
+        $todo[] = ['id' => $r['id'], 'kind' => 'audio', 'src' => file_url($r)];
+    }
+}
+
 $cfg = [
     'base' => base_url(),
     'csrf' => $csrf,
     'maxBytes' => (int) config('max_upload_mb') * 1024 * 1024,
     'maxDim' => (int) config('max_dimension'),
+    'todo' => array_slice($todo, 0, 100),
 ];
 page_head(e($site) . ' · Upload');
 ?>
 <section class="upload">
     <label id="drop" class="drop" tabindex="0">
-        <input id="file" type="file" accept="video/*,.mkv,.mov,.mp4,.webm,.m4v" hidden>
+        <input id="file" type="file" multiple accept="video/*,image/*,audio/*,.mkv,.mov,.mp4,.webm,.m4v,.mp3,.m4a,.wav,.flac,.ogg,.opus,.aac,.pdf,.zip,application/pdf,application/zip" hidden>
         <span class="drop-icon" aria-hidden="true"></span>
-        <strong class="fine">Drop a video here</strong>
-        <span class="muted fine">or click to choose a file. You can also paste one.</span>
-        <strong class="coarse">Tap to choose a video</strong>
-        <span class="muted coarse">From your camera roll or files</span>
+        <strong class="fine">Drop files here</strong>
+        <span class="muted fine">Videos, photos, audio, PDF or ZIP. Or click to choose, or paste.</span>
+        <strong class="coarse">Tap to choose</strong>
+        <span class="muted coarse">Videos, photos or audio from your phone</span>
+        <span class="muted small">Pick several photos at once to make a gallery</span>
     </label>
     <div id="jobs"></div>
 </section>
 
 <section class="library">
     <div class="library-head">
-        <h2>Your videos <span class="muted" id="count"><?= count($videos) ?></span></h2>
+        <h2>Your uploads <span class="muted" id="count"><?= count($videos) ?></span></h2>
         <form method="post" class="head-actions">
             <a class="btn ghost small" href="<?= e(base_url()) ?>/settings.php">Settings</a>
             <input type="hidden" name="action" value="logout">
@@ -93,15 +122,25 @@ page_head(e($site) . ' · Upload');
         <p class="muted empty">Nothing here yet. Your uploads will show up here.</p>
     <?php endif; ?>
     <ul class="grid" id="grid">
-        <?php foreach ($videos as $v): ?>
-            <li class="tile" data-id="<?= e($v['id']) ?>"<?= is_file(media_dir() . '/' . $v['id'] . '.jpg') ? '' : ' data-needs-thumb="' . e(video_url($v)) . '"' ?>>
-                <a class="thumb" href="<?= e(page_url($v)) ?>">
-                    <img src="<?= e(thumb_url($v)) ?>" alt="" loading="lazy" onerror="this.remove()">
-                    <span class="dur"><?= e(fmt_duration((float) $v['duration'])) ?></span>
+        <?php foreach ($videos as $v):
+            $kids = $children[$v['id']] ?? [];
+            $thumb = $v['kind'] === 'gallery' ? thumb_src($kids[0]) : thumb_src($v);
+            $badge = match ($v['kind']) {
+                'video', 'audio' => fmt_duration((float) $v['duration']),
+                'gallery' => count($kids) . ' photos',
+                'image' => $v['ext'] === 'gif' ? 'GIF' : '',
+                default => strtoupper($v['ext']),
+            };
+            $size = $v['kind'] === 'gallery' ? array_sum(array_map(fn ($k) => (int) $k['size'], $kids)) : (int) $v['size'];
+            ?>
+            <li class="tile kind-<?= e($v['kind']) ?>" data-id="<?= e($v['id']) ?>">
+                <a class="thumb" href="<?= e(page_url($v)) ?>" data-label="<?= e($v['kind'] === 'file' ? strtoupper($v['ext']) : '') ?>">
+                    <?php if ($thumb !== ''): ?><img src="<?= e($thumb) ?>" alt="" loading="lazy" onerror="this.remove()"><?php endif; ?>
+                    <?php if ($badge !== ''): ?><span class="dur"><?= e($badge) ?></span><?php endif; ?>
                 </a>
                 <div class="meta">
                     <a class="title" href="<?= e(page_url($v)) ?>"><?= e($v['title'] !== '' ? $v['title'] : 'Untitled') ?></a>
-                    <span class="muted small"><?= (int) $v['views'] ?> view<?= (int) $v['views'] === 1 ? '' : 's' ?> · <?= e(fmt_bytes((int) $v['size'])) ?> · <?= e(date('M j, Y', (int) $v['created_at'])) ?></span>
+                    <span class="muted small"><?= e(kind_label($v)) ?> · <?= (int) $v['views'] ?> view<?= (int) $v['views'] === 1 ? '' : 's' ?> · <?= e(fmt_bytes($size)) ?> · <?= e(date('M j, Y', (int) $v['created_at'])) ?><?= $v['status'] === 'held' ? ' · converting…' : '' ?></span>
                 </div>
                 <div class="actions">
                     <button class="btn small" data-copy="<?= e(page_url($v)) ?>">Copy link</button>

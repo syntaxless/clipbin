@@ -61,6 +61,24 @@ function cleanup_stale(): void
         @unlink($part);
         db()->prepare('DELETE FROM videos WHERE id = ?')->execute([$id]);
     }
+    // Galleries whose photos never arrived.
+    $st = db()->prepare('SELECT id FROM videos WHERE kind = "gallery" AND created_at < ?
+                         AND NOT EXISTS (SELECT 1 FROM videos c WHERE c.parent = videos.id)');
+    $st->execute([$cutoff]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $id) {
+        db()->prepare('DELETE FROM videos WHERE id = ?')->execute([$id]);
+    }
+    forget_old_groups();
+}
+
+// The answer to "finish": the item's link, and the gallery's when it is in one.
+function finished(array $v): array
+{
+    $res = ['id' => $v['id'], 'url' => page_url($v), 'kind' => $v['kind'], 'status' => $v['status']];
+    if ($v['parent'] !== '' && ($g = find_video($v['parent']))) {
+        $res['gallery'] = page_url($g);
+    }
+    return $res;
 }
 
 switch ($action) {
@@ -80,9 +98,16 @@ switch ($action) {
             $res['received'] = is_file($part) ? min((int) $v['received'], (int) filesize($part)) : 0;
             $res['chunkSize'] = (int) config('chunk_mb') * 1024 * 1024;
         } else {
-            $res['url'] = page_url($v);
+            $res += finished($v);
         }
         out($res);
+    }
+
+    // A gallery for photos picked together. The photos join it as they finish.
+    case 'gallery': {
+        $b = json_body();
+        $g = new_gallery((string) ($b['title'] ?? ''));
+        out(['id' => $g['id'], 'url' => page_url($g)]);
     }
 
     case 'init': {
@@ -97,14 +122,17 @@ switch ($action) {
         }
         cleanup_stale();
         $title = mb_substr(trim((string) ($b['title'] ?? '')), 0, 200);
+        // What the browser says it is, only until the file is checked at "finish".
+        $kind = in_array($b['kind'] ?? '', ['video', 'image', 'audio', 'file'], true) ? $b['kind'] : 'video';
         $id = new_id();
-        db()->prepare('INSERT INTO videos (id, title, size, width, height, duration, status, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, "uploading", ?)')
+        db()->prepare('INSERT INTO videos (id, title, size, width, height, duration, status, kind, ext, created_at)
+                       VALUES (?, ?, ?, ?, ?, ?, "uploading", ?, "", ?)')
             ->execute([
                 $id, $title, $size,
                 max(0, (int) ($b['width'] ?? 0)),
                 max(0, (int) ($b['height'] ?? 0)),
                 max(0.0, (float) ($b['duration'] ?? 0)),
+                $kind,
                 time(),
             ]);
         touch(part_path($id));
@@ -155,8 +183,8 @@ switch ($action) {
         $id = (string) ($_GET['id'] ?? '');
         $v = find_video($id);
         // Already finished (the reply got lost when the phone locked): same answer again.
-        if ($v && $v['status'] === 'ready') {
-            out(['id' => $id, 'url' => page_url($v)]);
+        if ($v && in_array($v['status'], ['ready', 'held'], true)) {
+            out(finished($v));
         }
         if (!$v || $v['status'] !== 'uploading') {
             fail('Unknown upload', 404);
@@ -166,40 +194,24 @@ switch ($action) {
         if (!is_file($part) || filesize($part) !== (int) $v['size']) {
             fail('Upload is incomplete');
         }
-        // Must be an MP4/MOV family file: bytes 4..8 are "ftyp".
-        $fh = fopen($part, 'rb');
-        $head = fread($fh, 12);
-        fclose($fh);
-        if (strlen($head) < 8 || substr($head, 4, 4) !== 'ftyp') {
+        $b = json_body();
+        try {
+            $v = finish_item($part, false, $id, [
+                'width' => $b['width'] ?? $v['width'],
+                'height' => $b['height'] ?? $v['height'],
+                'duration' => $b['duration'] ?? $v['duration'],
+                'thumb' => $b['thumb'] ?? '',
+                'gallery' => $b['gallery'] ?? '',
+            ]);
+        } catch (UploadError $e) {
             @unlink($part);
             db()->prepare('DELETE FROM videos WHERE id = ?')->execute([$id]);
-            fail('That is not an MP4 video');
+            fail($e->getMessage(), $e->getCode() >= 500 ? 500 : 415);
         }
-        $media = media_dir();
-        if (!rename($part, "$media/$id.mp4")) {
-            fail('Could not store video', 500);
-        }
-        $b = json_body();
-        $thumb = (string) ($b['thumb'] ?? '');
-        if (preg_match('#^data:image/jpeg;base64,#', $thumb)) {
-            $bin = base64_decode(substr($thumb, 23), true);
-            $info = $bin ? @getimagesizefromstring($bin) : false;
-            if ($info && $info[2] === IMAGETYPE_JPEG && strlen($bin) < 4 * 1024 * 1024) {
-                file_put_contents("$media/$id.jpg", $bin);
-            }
-        }
-        db()->prepare('UPDATE videos SET status = "ready", width = ?, height = ?, duration = ? WHERE id = ?')
-            ->execute([
-                max(0, (int) ($b['width'] ?? $v['width'])),
-                max(0, (int) ($b['height'] ?? $v['height'])),
-                max(0.0, (float) ($b['duration'] ?? $v['duration'])),
-                $id,
-            ]);
-        $v = find_video($id);
-        out(['id' => $id, 'url' => page_url($v)]);
+        out(finished($v));
     }
 
-    // Thumbnail (and size, if unknown) for a video that arrived without the
+    // Thumbnail (and size, if unknown) for something that arrived without the
     // browser, e.g. from the iPhone shortcut. Made by the library page.
     case 'thumb': {
         $b = json_body();
@@ -208,13 +220,9 @@ switch ($action) {
             fail('Not found', 404);
         }
         $media = media_dir();
-        $thumb = (string) ($b['thumb'] ?? '');
-        if (!is_file("$media/{$v['id']}.jpg") && preg_match('#^data:image/jpeg;base64,#', $thumb)) {
-            $bin = base64_decode(substr($thumb, 23), true);
-            $info = $bin ? @getimagesizefromstring($bin) : false;
-            if ($info && $info[2] === IMAGETYPE_JPEG && strlen($bin) < 4 * 1024 * 1024) {
-                file_put_contents("$media/{$v['id']}.jpg", $bin);
-            }
+        $dst = $v['kind'] === 'image' ? "$media/{$v['id']}_t.jpg" : "$media/{$v['id']}.jpg";
+        if (in_array($v['kind'], ['video', 'image'], true) && !is_file($dst)) {
+            save_data_jpeg((string) ($b['thumb'] ?? ''), $dst);
         }
         db()->prepare('UPDATE videos SET width = ?, height = ?, duration = ? WHERE id = ?')
             ->execute([
@@ -223,7 +231,49 @@ switch ($action) {
                 (float) $v['duration'] ?: max(0.0, (float) ($b['duration'] ?? 0)),
                 $v['id'],
             ]);
-        out(['ok' => true, 'thumb' => is_file("$media/{$v['id']}.jpg") ? thumb_url($v) : '']);
+        out(['ok' => true, 'thumb' => is_file($dst) ? base_url() . '/media/' . basename($dst) : '']);
+    }
+
+    // A HEIC photo the server couldn't convert: the library page downloads it
+    // (it is kept out of public reach), turns it into JPEG and sends it back.
+    case 'held': {
+        $b = json_body();
+        $v = find_video((string) ($b['id'] ?? ''));
+        $f = $v ? APP_ROOT . "/data/held/{$v['id']}.heic" : '';
+        if (!$v || $v['status'] !== 'held' || !is_file($f)) {
+            fail('Not found', 404);
+        }
+        header('Content-Type: image/heic');
+        header('Content-Length: ' . filesize($f));
+        readfile($f);
+        exit;
+    }
+
+    case 'replace': {
+        $id = (string) ($_POST['id'] ?? '');
+        $v = find_video($id);
+        if (!$v || $v['status'] !== 'held') {
+            fail('Not found', 404);
+        }
+        $f = $_FILES['file'] ?? null;
+        if (!$f || $f['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name']) || detect_ext($f['tmp_name']) !== 'jpg') {
+            fail('Send the photo as a JPEG');
+        }
+        $media = media_dir();
+        if (!move_uploaded_file($f['tmp_name'], "$media/$id.jpg")) {
+            fail('Could not store the photo', 500);
+        }
+        @chmod("$media/$id.jpg", 0644);
+        jpeg_clean("$media/$id.jpg");
+        if (!save_data_jpeg((string) ($_POST['thumb'] ?? ''), "$media/{$id}_t.jpg")) {
+            make_thumb("$media/$id.jpg", 'jpg', "$media/{$id}_t.jpg");
+        }
+        [$w, $h] = image_size("$media/$id.jpg", 'jpg');
+        @unlink(APP_ROOT . "/data/held/$id.heic");
+        db()->prepare('UPDATE videos SET status = "ready", ext = "jpg", size = ?, received = ?, width = ?, height = ? WHERE id = ?')
+            ->execute([filesize("$media/$id.jpg"), filesize("$media/$id.jpg"), $w, $h, $id]);
+        $v = find_video($id);
+        out(['ok' => true, 'thumb' => thumb_src($v)]);
     }
 
     case 'rename': {
@@ -243,11 +293,7 @@ switch ($action) {
         if (!find_video($id)) {
             fail('Not found', 404);
         }
-        $media = media_dir();
-        @unlink("$media/$id.mp4");
-        @unlink("$media/$id.jpg");
-        @unlink(part_path($id));
-        db()->prepare('DELETE FROM videos WHERE id = ?')->execute([$id]);
+        delete_item($id); // a gallery takes its photos with it
         out(['ok' => true]);
     }
 

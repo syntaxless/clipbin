@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 const APP_ROOT = __DIR__ . '/..';
+require __DIR__ . '/media.php';
 
 function config(string $key)
 {
@@ -89,7 +90,37 @@ function db(): PDO
         created_at INTEGER NOT NULL
     )');
     $pdo->exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
+    migrate_schema($pdo);
     return $pdo;
+}
+
+// Version 1 (photos, audio, galleries): every row gets a kind and a file
+// extension. Rows from before are all MP4 videos, which is what the defaults
+// say, so existing links keep working untouched. The table keeps its old
+// name "videos" for the same reason.
+function migrate_schema(PDO $pdo): void
+{
+    if ((int) $pdo->query('PRAGMA user_version')->fetchColumn() >= 1) {
+        return;
+    }
+    $have = array_column($pdo->query('PRAGMA table_info(videos)')->fetchAll(), 'name');
+    $add = [
+        'kind' => "TEXT NOT NULL DEFAULT 'video'",   // video, image, audio, file, gallery
+        'ext' => "TEXT NOT NULL DEFAULT 'mp4'",      // stored as media/<id>.<ext>
+        'parent' => "TEXT NOT NULL DEFAULT ''",      // gallery a photo belongs to
+        'position' => 'INTEGER NOT NULL DEFAULT 0',  // order inside the gallery
+    ];
+    foreach ($add as $col => $def) {
+        if (!in_array($col, $have, true)) {
+            try {
+                $pdo->exec("ALTER TABLE videos ADD COLUMN $col $def");
+            } catch (PDOException $e) {
+                // another request added it at the same moment
+            }
+        }
+    }
+    $pdo->exec('CREATE INDEX IF NOT EXISTS videos_parent ON videos (parent)');
+    $pdo->exec('PRAGMA user_version = 1');
 }
 
 function setting(string $key, ?string $value = null): ?string

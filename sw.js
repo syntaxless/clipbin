@@ -1,4 +1,4 @@
-// Pastey service worker. Its only job: receive videos shared from the
+// Pastey service worker. Its only job: receive files shared from the
 // phone's share sheet (Android "Share to Pastey") and hand them to the page.
 // It deliberately caches nothing else, so the site never goes stale.
 const SHARE_CACHE = 'pastey-share';
@@ -12,12 +12,13 @@ self.addEventListener('fetch', (event) => {
   event.respondWith((async () => {
     try {
       const form = await event.request.formData();
+      // "video" is the field name in the manifest; it carries photos and audio too.
       const files = form.getAll('video').filter((f) => f && f.size);
       const cache = await caches.open(SHARE_CACHE);
       let i = 0;
       for (const f of files) {
         await cache.put(`shared/${Date.now()}-${i++}`, new Response(f, {
-          headers: { 'Content-Type': f.type || 'video/mp4', 'X-Name': encodeURIComponent(f.name || 'video.mp4') },
+          headers: { 'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(f.name || 'shared') },
         }));
       }
     } catch (err) {
